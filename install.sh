@@ -215,18 +215,31 @@ ok "Command linked"
 # =========================
 # 🔐 PASSWORD SETUP
 # =========================
+
 if [ ! -f "$HOME/.nettool_pass" ]; then
   echo ""
-  read -s -p "Buat password NETTOOLS: " pass
-  echo ""
-  
-  if [ -z "$pass" ]; then
-    fail "Password tidak boleh kosong"
-    exit 1
-  fi
 
-  echo -n "$pass" | sha256sum | awk '{print $1}' > "$HOME/.nettool_pass"
-  ok "Password berhasil diset"
+  while true; do
+    read -s -p "Buat password NETTOOLS: " pass
+    echo ""
+
+    if [ -z "$pass" ]; then
+      echo -e "${YELLOW}[!] Password tidak boleh kosong, coba lagi${NC}"
+      continue
+    fi
+
+    read -s -p "Konfirmasi password: " pass2
+    echo ""
+
+    if [ "$pass" != "$pass2" ]; then
+      echo -e "${RED}[!] Password tidak sama, ulangi${NC}"
+      continue
+    fi
+
+    echo -n "$pass" | sha256sum | awk '{print $1}' > "$HOME/.nettool_pass"
+    ok "Password berhasil diset"
+    break
+  done
 fi
 
 # =========================
