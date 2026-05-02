@@ -1,0 +1,1137 @@
+#!/bin/bash
+
+# =========================
+# 🎨 COLORS
+# =========================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# CTRL + C RAPI
+trap "echo -e '\n[!] Safe exit activated'; exit 0" SIGINT
+trap 'echo "[!] Warning: command error detected (ignored)"' ERR
+
+# =========================
+# 🧠 PYTHON ENV AUTO DETECT + AUTO CREATE
+# =========================
+ENV_PATH="$HOME/nettool-env"
+
+if [ ! -d "$ENV_PATH" ] || [ ! -f "$ENV_PATH/bin/python" ] || \
+   [ ! -f "$ENV_PATH/bin/pip" ]; then
+
+  echo "[~] AI environment rusak / tidak lengkap, rebuild..."
+
+  rm -rf "$ENV_PATH"
+
+  python3 -m venv "$ENV_PATH"
+
+  "$ENV_PATH/bin/pip" install --upgrade pip
+  "$ENV_PATH/bin/pip" install ultralytics opencv-python --no-cache-dir
+  "$ENV_PATH/bin/pip" install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+  rm -rf ~/.cache/pip
+fi
+
+PYTHON="$ENV_PATH/bin/python"
+
+# =========================
+# 🔐 PASSWORD PROTECTION (SECURE)
+# =========================
+
+PASS_FILE="$HOME/.nettool_pass"
+
+if [ ! -f "$PASS_FILE" ]; then
+  echo "[!] Password belum diset. Jalankan installer dulu."
+  exit 1
+fi
+
+echo ""
+read -s -p "Masukkan Password NETTOOLS: " input
+echo ""
+
+# cek kosong
+if [ -z "$input" ]; then
+  echo "[!] Password tidak boleh kosong"
+  exit 1
+fi
+
+# hash input
+INPUT_HASH=$(echo -n "$input" | sha256sum | awk '{print $1}')
+
+# ambil hash tersimpan
+STORED_HASH=$(cat "$PASS_FILE")
+
+# validasi
+if [ "$INPUT_HASH" != "$STORED_HASH" ]; then
+  echo "[!] Password salah"
+  exit 1
+fi
+
+echo "[✔] Akses diterima"
+echo ""
+
+# =========================
+# 💾 STORAGE SYSTEM
+# =========================
+storage_mode="local"
+storage_path="$HOME/nettools_logs"
+
+USB_PATH=""
+USB_SELECTED=0
+
+SCENARIO_DIR="$HOME/nettools_scenarios"
+mkdir -p "$SCENARIO_DIR"
+
+# =========================
+# COMMAND MAP
+# =========================
+
+
+# =========================
+# COMMAND MAP - IP TOOLS
+# =========================
+
+cmd_lihat_ip() {
+  ip -brief address
+}
+
+cmd_scan_jaringan() {
+  ipku=$(ip route get 8.8.8.8 | awk '{print $7}')
+  net=$(echo "$ipku" | cut -d '.' -f1-3).0/24
+  nmap -sn "$net"
+}
+
+cmd_ping_ip() {
+  read -p "Target IP: " target
+  ping -c 4 "$target"
+}
+
+cmd_set_ip_manual() {
+  koneksi=$(nmcli -t -f NAME,DEVICE con show --active | grep -E "wlp|eno|eth" | head -n 1 | cut -d: -f1)
+
+  read -p "IP (contoh 192.168.1.10/24): " ipbaru
+  read -p "Gateway: " gateway
+
+  nmcli con mod "$koneksi" ipv4.addresses "$ipbaru"
+  nmcli con mod "$koneksi" ipv4.gateway "$gateway"
+  nmcli con mod "$koneksi" ipv4.method manual
+  nmcli con up "$koneksi"
+}
+
+cmd_routing() {
+  ip route
+  echo ""
+  echo "[~] Gateway:"
+  ip route | grep default
+
+  echo ""
+  echo "[~] Interface Aktif:"
+  ip -brief address | grep UP
+}
+
+cmd_dns_check() {
+  echo "[~] DNS Aktif:"
+  resolvectl status | grep "DNS Servers" -A2
+}
+
+cmd_internet_check() {
+  ping -c 2 8.8.8.8
+}
+
+cmd_scan_ssh() {
+  ipku=$(ip route get 8.8.8.8 | awk '{print $7}')
+  net=$(echo "$ipku" | cut -d '.' -f1-3).0/24
+  nmap -p 22 --open "$net"
+}
+
+cmd_ssh_connect() {
+  read -p "Target IP: " target
+  read -p "User: " user
+  ssh "$user@$target"
+}
+
+cmd_reset_ip() {
+  echo "[~] Reset IP ke otomatis (DHCP)..."
+
+  koneksi=$(nmcli -t -f NAME,DEVICE con show --active | grep -E "wlp|eth|eno" | head -n 1 | cut -d: -f1)
+
+  if [ -z "$koneksi" ]; then
+    echo "[!] Tidak ada koneksi aktif"
+  else
+    echo "[~] Koneksi: $koneksi"
+
+    sudo nmcli con mod "$koneksi" ipv4.method auto
+    sudo nmcli con mod "$koneksi" ipv4.addresses ""
+    sudo nmcli con mod "$koneksi" ipv4.gateway ""
+    sudo nmcli con mod "$koneksi" ipv4.dns ""
+
+    sudo nmcli con down "$koneksi"
+    sudo nmcli con up "$koneksi"
+
+    echo "[✔] IP berhasil di reset"
+  fi
+}
+
+# =========================
+# COMMAND MAP - TCP TOOLS
+# =========================
+
+cmd_tcp_scan_port() {
+  read -p "Target: " t
+  nmap -sT "$t"
+}
+
+cmd_tcp_service_detection() {
+  read -p "Target: " t
+  nmap -sV "$t"
+}
+
+cmd_tcp_range_scan() {
+  read -p "Target: " t
+  nmap -p 1-1000 "$t"
+}
+
+cmd_tcp_specific_port() {
+  read -p "Target: " t
+  read -p "Port: " p
+  nmap -p "$p" "$t"
+}
+
+cmd_tcp_local_ports() {
+  ss -tuln
+}
+
+cmd_tcp_banner_grab() {
+  read -p "Target: " t
+  nc "$t" 80
+}
+
+# =========================
+# COMMAND MAP - STORAGE
+# =========================
+
+cmd_storage_local() {
+  storage_mode="local"
+  storage_path="$HOME/nettools_logs"
+  mkdir -p "$storage_path"
+  echo "Local active"
+}
+
+cmd_storage_usb() {
+  storage_mode="usb"
+  storage_path="$USB_PATH/NETTOOLS"
+  mkdir -p "$storage_path"
+  echo "USB active"
+}
+
+cmd_storage_install() {
+  read -p "Install apa? (contoh: nmap): " pkg
+
+  if [ -z "$pkg" ]; then
+    echo "[!] Tidak ada input"
+  else
+    sudo apt update
+    sudo apt install -y "$pkg"
+
+    if [ $? -eq 0 ]; then
+      echo "[✔] Install berhasil"
+      log_save "Install $pkg"
+    else
+      echo "[!] Install gagal"
+    fi
+  fi
+}
+
+cmd_storage_save_log() {
+  read -p "Ketik YES untuk save log: " confirm
+
+  if [ "$confirm" != "YES" ]; then
+    echo "[x] Dibatalkan"
+    return
+  fi
+
+  init_storage
+
+  LOG_SRC="$HOME/nettools_logs/nettools_log.txt"
+
+  if [ ! -f "$LOG_SRC" ]; then
+    echo "[!] Log file belum ada, belum bisa disimpan"
+    return
+  fi
+
+  # safety storage check
+  if [ -z "$storage_path" ] || [ ! -d "$storage_path" ]; then
+    echo "[!] Storage tidak valid"
+    return
+  fi
+
+  mkdir -p "$storage_path"
+
+  cp "$LOG_SRC" "$storage_path/" 2>/dev/null
+
+  if [ $? -eq 0 ]; then
+    echo "[✔] Log berhasil disimpan"
+  else
+    echo "[!] Gagal menyimpan log"
+  fi
+}
+
+# =========================
+# COMMAND MAP - USB TOOLS
+# =========================
+
+cmd_usb_detect() {
+  echo "[~] Available USB devices:"
+  lsblk -o NAME,SIZE,MOUNTPOINT | grep "/media\|/run/media"
+}
+
+cmd_usb_select() {
+  echo "[~] Detecting USB devices..."
+
+  # ambil hanya removable + mount point valid
+  mapfile -t usb_list < <(
+    lsblk -o NAME,SIZE,MOUNTPOINT,RM,TRAN,TYPE \
+    | awk '$4==1 && $3!="" && ($5=="usb" || $5=="") {print $3}'
+  )
+
+  if [ ${#usb_list[@]} -eq 0 ]; then
+    echo "[!] No USB devices detected"
+    USB_SELECTED=0
+    return
+  fi
+
+  echo ""
+  echo "[~] Available USB mounts:"
+  for i in "${!usb_list[@]}"; do
+    echo "$i. ${usb_list[$i]}"
+  done
+
+  echo ""
+  read -p "Select USB index: " idx
+
+  # VALIDASI INPUT
+  if [ -z "$idx" ]; then
+    echo "[!] No selection"
+    USB_SELECTED=0
+    return
+  fi
+
+  if ! [[ "$idx" =~ ^[0-9]+$ ]]; then
+    echo "[!] Invalid selection (not number)"
+    USB_SELECTED=0
+    return
+  fi
+
+  if [ -z "${usb_list[$idx]}" ]; then
+    echo "[!] Invalid index"
+    USB_SELECTED=0
+    return
+  fi
+
+  USB_PATH="${usb_list[$idx]}"
+  USB_SELECTED=1
+
+  echo "[✔] USB selected: $USB_PATH"
+
+  # safety check tambahan
+  if [[ "$USB_PATH" != /media/* && "$USB_PATH" != /run/media/* ]]; then
+    echo "[!] WARNING: unusual mount path"
+  fi
+}
+
+cmd_usb_workspace() {
+  mkdir -p "$USB_PATH/NETTOOLS/logs"
+  mkdir -p "$USB_PATH/NETTOOLS/reports"
+  echo "[✔] Workspace created"
+}
+
+cmd_usb_read() {
+  ls -R "$USB_PATH"
+}
+
+cmd_usb_delete() {
+  if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
+    echo "[!] No USB selected"
+    return
+  fi
+
+  if [ ! -d "$USB_PATH" ]; then
+    echo "[!] Invalid USB path"
+    return
+  fi
+
+  echo "[!] WARNING: This will delete ALL files in:"
+  echo "    $USB_PATH"
+  read -p "Type YES to confirm: " confirm
+
+  if [ "$confirm" != "YES" ]; then
+    echo "[x] Cancelled"
+    return
+  fi
+
+  # safety double-check
+  if [ -z "$USB_PATH" ] || [ "$USB_PATH" = "/" ]; then
+    echo "[!] Unsafe path detected, abort"
+    return
+  fi
+
+  rm -rf "$USB_PATH"/* 2>/dev/null
+  sync
+
+  echo "[✔] Deleted successfully"
+
+  if [ "$(ls -A "$USB_PATH" 2>/dev/null)" ]; then
+    echo "[!] WARNING: Some files still exist"
+  else
+    echo "[✔] VERIFIED: USB is empty"
+  fi
+}
+
+# =========================
+# COMMAND MAP - AI TOOLS
+# =========================
+
+cmd_ai_webcam_all() {
+  init_storage
+  echo "[~] AI Webcam All"
+
+  if [ ! -f "$HOME/ai_detect.py" ]; then
+    echo "[!] ai_detect.py tidak ditemukan"
+    return
+  fi
+
+  $PYTHON "$HOME/ai_detect.py" 0 "$storage_path/captures" all
+  log_save "AI Webcam All"
+}
+
+cmd_ai_webcam_person() {
+  init_storage
+  echo "[~] AI Webcam Person"
+
+  if [ ! -f "$HOME/ai_detect.py" ]; then
+    echo "[!] ai_detect.py tidak ditemukan"
+    return
+  fi
+
+  $PYTHON "$HOME/ai_detect.py" 0 "$storage_path/captures" person
+  log_save "AI Webcam Person"
+}
+
+cmd_ai_rtsp() {
+  init_storage
+  read -p "RTSP URL: " rtsp
+
+  if [ -z "$rtsp" ]; then
+    echo "[!] RTSP kosong"
+    return
+  fi
+
+  if [ ! -f "$HOME/ai_detect.py" ]; then
+    echo "[!] ai_detect.py tidak ditemukan"
+    return
+  fi
+
+  $PYTHON "$HOME/ai_detect.py" "$rtsp" "$storage_path/captures" all
+  log_save "AI CCTV RTSP"
+}
+
+cmd_ai_image() {
+  init_storage
+  read -p "Image path: " img
+
+  if [ ! -f "$img" ]; then
+    echo "[!] Image tidak ditemukan"
+    return
+  fi
+
+  if [ ! -f "$HOME/ai_detect.py" ]; then
+    echo "[!] ai_detect.py tidak ditemukan"
+    return
+  fi
+
+  $PYTHON "$HOME/ai_detect.py" "$img" "$storage_path/captures" all
+  log_save "AI Image Detect"
+}
+
+cmd_ai_video() {
+  init_storage
+  read -p "Video path: " vid
+
+  if [ ! -f "$vid" ]; then
+    echo "[!] Video tidak ditemukan"
+    return
+  fi
+
+  if [ ! -f "$HOME/ai_detect.py" ]; then
+    echo "[!] ai_detect.py tidak ditemukan"
+    return
+  fi
+
+  $PYTHON "$HOME/ai_detect.py" "$vid" "$storage_path/captures" all
+  log_save "AI Video Detect"
+}
+
+cmd_ai_train() {
+  init_storage
+  echo "[~] Mencari data.yaml..."
+
+  if [ ! -f "$HOME/ai_train.py" ]; then
+    echo "[!] ai_train.py tidak ditemukan"
+    return
+  fi
+
+  mapfile -t files < <(find "$HOME" -type f -name "data.yaml" | sort)
+
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "[!] Tidak ditemukan data.yaml"
+    return
+  fi
+
+  options=()
+  for i in "${!files[@]}"; do
+    options+=("$i" "${files[$i]}")
+  done
+
+  choice=$(dialog --menu "Pilih data.yaml:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
+
+  if [ -z "$choice" ] || ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+    echo "[x] Dibatalkan / invalid selection"
+    return
+  fi
+
+  data="${files[$choice]}"
+
+  if [ -z "$data" ] || [ ! -f "$data" ]; then
+    echo "[!] File data.yaml tidak valid"
+    return
+  fi
+
+  echo "[!] Kamu pilih: $data"
+  read -p "Ketik YES untuk training: " confirm
+
+  if [ "$confirm" != "YES" ]; then
+    echo "[x] Dibatalkan"
+    return
+  fi
+
+  $PYTHON "$HOME/ai_train.py" "$data"
+  log_save "Custom AI Training"
+}
+
+cmd_ai_run() {
+  init_storage
+  if ! command -v dialog >/dev/null 2>&1; then
+    echo "[!] dialog belum terinstall"
+    echo "[~] Install dengan Installer di Storage Mode atau sudo apt install dialog"
+    return
+  fi
+  
+  echo "[~] Pilih model folder..."
+
+  if [ ! -f "$HOME/ai_detect.py" ]; then
+    echo "[!] ai_detect.py tidak ditemukan"
+    return
+  fi
+
+  command -v dialog >/dev/null 2>&1 || {
+    echo "[!] dialog tidak tersedia"
+    return
+  }
+
+  mapfile -t dirs < <(find "$HOME" -maxdepth 6 -type d -path "*/runs/*" 2>/dev/null | sort)
+
+  if [ ${#dirs[@]} -eq 0 ]; then
+    echo "[!] Tidak ada model runs ditemukan"
+    return
+  fi
+
+  options=()
+  for i in "${!dirs[@]}"; do
+    options+=("$i" "${dirs[$i]}")
+  done
+
+  choice=$(dialog --menu "Pilih folder model:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
+
+  if [ -z "$choice" ] || ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+    echo "[x] Dibatalkan / invalid selection"
+    return
+  fi
+
+  selected="${dirs[$choice]}"
+
+  if [ -z "$selected" ] || [ ! -d "$selected" ]; then
+    echo "[!] Folder tidak valid"
+    return
+  fi
+
+  model=$(find "$selected" -name "best.pt" | head -n 1)
+
+  if [ -z "$model" ]; then
+    echo "[!] Model best.pt tidak ditemukan"
+    return
+  fi
+
+  echo "[✔] Model terpilih: $model"
+
+  echo "1. Webcam"
+  echo "2. RTSP"
+  read -p "Pilih input source: " mode
+
+  case "$mode" in
+    1) src=0 ;;
+    2)
+      read -p "RTSP URL: " src
+      [ -z "$src" ] && { echo "[!] RTSP kosong"; return; }
+      ;;
+    *) echo "[!] Invalid pilihan"; return ;;
+  esac
+
+  echo "[~] Running AI model..."
+  $PYTHON "$HOME/ai_detect.py" "$src" "$storage_path/captures" all "$model"
+
+  log_save "Custom AI Run"
+}
+
+# =========================
+# 📦 SCENARIO RUNNER
+# =========================
+
+cmd_scenario_list() {
+  echo "[~] Loading scenarios..."
+
+  mapfile -t scenarios < <(find "$HOME/nettools_scenarios" -type f)
+
+  if [ ${#scenarios[@]} -eq 0 ]; then
+    echo "[!] No scenario found"
+    return
+  fi
+
+  echo ""
+  echo "Available Scenarios:"
+  for i in "${!scenarios[@]}"; do
+    name=$(basename "${scenarios[$i]}")
+    echo "$((i+1)). $name"
+  done
+
+  read -p "Select scenario: " choice
+
+  index=$((choice-1))
+
+  if [ -z "${scenarios[$index]}" ]; then
+    echo "[!] Invalid selection"
+    return
+  fi
+
+  echo "[~] Running scenario..."
+  bash "${scenarios[$index]}"
+
+  log_save "Run Scenario: $(basename "${scenarios[$index]}")"
+}
+
+init_storage() {
+
+  # MODE LOCAL
+  if [ "$storage_mode" = "local" ]; then
+    storage_path="$HOME/nettools_logs"
+
+  # MODE USB
+  else
+    # validasi USB
+    if [ -z "$USB_PATH" ] || [ ! -d "$USB_PATH" ]; then
+      echo "[!] USB disconnected/invalid → fallback to local mode"
+      storage_mode="local"
+      storage_path="$HOME/nettools_logs"
+    else
+      storage_path="$USB_PATH/NETTOOLS"
+    fi
+  fi
+
+  # safety final check (anti root overwrite)
+  if [ -z "$storage_path" ] || [ "$storage_path" = "/" ]; then
+    echo "[!] CRITICAL: invalid storage path detected → forcing local"
+    storage_mode="local"
+    storage_path="$HOME/nettools_logs"
+  fi
+
+  # ensure directories exist
+  mkdir -p "$storage_path"
+  mkdir -p "$storage_path/captures"
+}
+
+log_save() {
+  # pastikan storage sudah benar sebelum apa pun
+  init_storage
+
+  # safety check
+  if [ -z "$storage_path" ] || [ ! -d "$storage_path" ]; then
+    echo "[!] Storage path invalid, log skipped"
+    return
+  fi
+
+  LOG_FILE="$storage_path/nettools_log.txt"
+
+  # rotate log jika terlalu besar (>5MB)
+  if [ -f "$LOG_FILE" ]; then
+    size=$(stat -c%s "$LOG_FILE" 2>/dev/null)
+
+    if [ "$size" -gt 5000000 ]; then
+      mv "$LOG_FILE" "$storage_path/nettools_log_old.txt"
+      echo "[~] Log rotated"
+    fi
+  fi
+
+  mkdir -p "$storage_path"
+
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+# =========================
+# 🔁 MAIN LOOP
+# =========================
+
+for pkg in nmap dialog figlet; do
+  if ! command -v $pkg >/dev/null 2>&1; then
+    echo "[!] Installing $pkg..."
+    sudo apt install -y $pkg
+  fi
+done
+
+while true; do
+
+  init_storage
+
+  echo -e "${CYAN}=========================${NC}"
+  echo ""
+  if command -v figlet >/dev/null 2>&1; then
+    figlet NETTOOLS
+  else
+    echo -e "${GREEN}        NETTOOLS${NC}"
+  fi
+  echo ""
+  echo -e "${CYAN}=========================${NC}"
+  echo -e "${YELLOW}Storage Mode : $storage_mode${NC}"
+  echo -e "${BLUE}Path         : $storage_path${NC}"
+  echo -e "${CYAN}=========================${NC}"
+  echo "1. IP Tools"
+  echo "2. TCP Tools"
+  echo "3. Storage Mode"
+  echo "4. AI Tools"
+  echo "5. Custom Scenario"
+  echo "6. Exit"
+  echo -e "${CYAN}=========================${NC}"
+
+  read -p "Pilih menu: " main
+
+  case $main in
+
+    # =====================
+    # 🌐 IP TOOLS (10 MENU)
+    # =====================
+    1)
+      while true; do
+
+        init_storage
+
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${GREEN}        IP TOOLS${NC}"
+        echo -e "${CYAN}=========================${NC}"
+        echo "1. Lihat IP"
+        echo "2. Scan Jaringan"
+        echo "3. Ping IP"
+        echo "4. Set IP Manual"
+        echo "5. Routing"
+        echo "6. DNS Check"
+        echo "7. Internet Check"
+        echo "8. Scan SSH Device"
+        echo "9. SSH Connect"
+	echo "10. Reset IP"
+        echo "11. Kembali"
+        echo -e "${CYAN}=========================${NC}"
+
+        read -p "Pilih menu: " ipmenu
+
+        case $ipmenu in
+
+          1)
+  	    cmd_lihat_ip
+            log_save "Lihat IP"
+            ;;
+
+          2)
+    	    cmd_scan_jaringan
+    	    log_save "Scan jaringan"
+    	    ;;
+
+          3)
+            cmd_ping_ip
+            log_save "Ping IP"
+    	    ;;
+
+          4)
+    	    cmd_set_ip_manual
+    	    log_save "Set IP manual"
+    	    ;;
+
+          5)
+            cmd_routing
+    	    read -p "Tekan ENTER untuk kembali..."
+    	    ;;
+
+          6)
+    	    cmd_dns_check
+    	    ;;
+
+          7)
+            cmd_internet_check
+    	    ;;
+
+       	  8)
+    	    cmd_scan_ssh
+    	    ;;
+
+          9)
+    	    cmd_ssh_connect
+    	    ;;
+
+          10)
+             cmd_reset_ip
+             log_save "Reset IP DHCP"
+             ;;
+
+          11)
+             break
+             ;;
+
+        esac
+
+      done
+      ;;
+
+    # =====================
+    # 🔥 TCP TOOLS
+    # =====================
+    2)
+      while true; do
+
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${GREEN}        TCP TOOLS${NC}"
+        echo -e "${CYAN}=========================${NC}"
+        echo "1. Scan Port"
+        echo "2. Service Detection"
+        echo "3. Range Scan"
+        echo "4. Specific Port"
+        echo "5. Local Ports"
+        echo "6. Banner Grab"
+        echo "7. Kembali"
+        echo -e "${CYAN}=========================${NC}"
+
+        read -p "Pilih menu: " tcpmenu
+
+        case $tcpmenu in
+
+   	  1)
+    	    cmd_tcp_scan_port
+    	    ;;
+
+  	  2)
+   	    cmd_tcp_service_detection
+    	    ;;
+
+  	  3)
+    	    cmd_tcp_range_scan
+    	    ;;
+
+  	  4)
+    	    cmd_tcp_specific_port
+    	    ;;
+
+  	  5)
+    	    cmd_tcp_local_ports
+    	    ;;
+
+  	  6)
+    	    cmd_tcp_banner_grab
+    	    ;;
+
+  	  7)
+    	    break
+    	    ;;
+
+	esac
+
+      done
+      ;;
+
+    # =====================
+    # 💾 STORAGE MODE
+    # =====================
+    3)
+      while true; do
+
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${YELLOW}     STORAGE MODE${NC}"
+        echo -e "${CYAN}=========================${NC}"
+        echo "1. Local Mode"
+        echo "2. USB Mode"
+	echo "3. Installer"
+	echo "4. Save Log"
+        echo "5. USB Tools"
+        echo "6. Kembali"
+        echo -e "${CYAN}=========================${NC}"
+
+        read -p "Pilih menu: " smode
+
+        case $smode in
+
+          1)
+  	    cmd_storage_local
+  	    ;;
+
+	  2)
+  	    cmd_storage_usb
+  	    ;;
+
+	  3)
+  	    cmd_storage_install
+  	    ;;
+
+	  4)
+  	    cmd_storage_save_log
+  	    ;;
+
+          5)
+            while true; do
+
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}      USB TOOLS${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Detect USB"
+              echo "2. Select USB"
+              echo "3. Create Workspace"
+              echo "4. Read Data"
+              echo "5. Delete Data"
+              echo "6. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+
+              read -p "Pilih menu: " usbmenu
+
+              case $usbmenu in
+
+                1)
+	          cmd_usb_detect
+  	     	  ;;
+
+		2)
+  		  cmd_usb_select
+  		  ;;
+
+		3)
+  		  cmd_usb_workspace
+  		  ;;
+
+	    	4)
+  		  cmd_usb_read
+  		  ;;
+
+		5)
+  		  cmd_usb_delete
+  		  ;;
+
+                6)
+                  break
+                  ;;
+
+              esac
+
+            done
+            ;;
+
+          6)
+            break
+            ;;
+
+        esac
+
+      done
+      ;;
+
+    # =====================
+    # 🤖 AI TOOLS
+    # =====================
+    4)
+      while true; do
+
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${GREEN}        AI TOOLS${NC}"
+        echo -e "${CYAN}=========================${NC}"
+        echo "1. Detect Webcam (All)"
+        echo "2. Detect Webcam (Person Only)"
+        echo "3. Detect CCTV (RTSP)"
+        echo "4. Detect Image File"
+	echo "5. Detect Video File"
+        echo "6. Custom AI Train"
+        echo "7. Custom AI Run"
+	echo "8. Kembali"
+        echo -e "${CYAN}=========================${NC}"
+
+        read -p "Pilih menu: " aimenu
+
+        case $aimenu in
+
+          1) cmd_ai_webcam_all ;;
+	  2) cmd_ai_webcam_person ;;
+	  3) cmd_ai_rtsp ;;
+	  4) cmd_ai_image ;;
+	  5) cmd_ai_video ;;
+	  6) cmd_ai_train ;;
+	  7) cmd_ai_run ;;
+	  8) break ;;
+          *)
+            echo -e "${RED}Invalid option${NC}"
+            ;;
+
+        esac
+
+      done
+      ;;
+    
+    # ================
+    # CUSTOM SCENARIO
+    # ================
+    5)
+      echo -e "${CYAN}=========================${NC}"
+      echo -e "${CYAN}     CUSTOM SCENARIO${NC}"
+      echo -e "${CYAN}=========================${NC}"
+
+      echo "1. Jalankan Scenario"
+      echo "2. Buat Scenario Baru"
+      echo "3. Kembali"
+
+      echo -e "${CYAN}=========================${NC}"
+
+      read -p "Pilih menu: " sub
+
+      case $sub in
+        1)
+  	  shopt -s nullglob
+          files=("$SCENARIO_DIR"/*.sh)
+          shopt -u nullglob
+
+  	  if [ ${#files[@]} -eq 0 ]; then
+            echo "[!] Tidak ada scenario"
+            return
+          fi
+
+      	    echo -e "${CYAN}=========================${NC}"
+    	    echo -e "${CYAN}   DAFTAR SCENARIO${NC}"
+    	    echo -e "${CYAN}=========================${NC}"
+
+    	    for i in "${!files[@]}"; do
+      	      echo "$i. $(basename "${files[$i]}")"
+    	    done
+
+    	    echo -e "${CYAN}=========================${NC}"
+
+    	    read -p "Pilih scenario: " pilih
+
+   	    if [ -n "${files[$pilih]}" ]; then
+      	      echo "[~] Menjalankan scenario..."
+
+     	      while read -r cmd; do
+        	[ -z "$cmd" ] && continue
+
+	        case "$cmd" in
+
+        	  cmd_lihat_ip) cmd_lihat_ip ;;
+	          cmd_scan_jaringan) cmd_scan_jaringan ;;
+	          cmd_ping_ip) cmd_ping_ip ;;
+         	  cmd_set_ip_manual) cmd_set_ip_manual ;;
+	          cmd_routing) cmd_routing ;;
+	          cmd_dns_check) cmd_dns_check ;;
+	          cmd_internet_check) cmd_internet_check ;;
+       	          cmd_scan_ssh) cmd_scan_ssh ;;
+                  cmd_ssh_connect) cmd_ssh_connect ;;
+	          cmd_reset_ip) cmd_reset_ip ;;
+
+	          cmd_tcp_scan_port) cmd_tcp_scan_port ;;
+	          cmd_tcp_service_detection) cmd_tcp_service_detection ;;
+	          cmd_tcp_range_scan) cmd_tcp_range_scan ;;
+	          cmd_tcp_specific_port) cmd_tcp_specific_port ;;
+	          cmd_tcp_local_ports) cmd_tcp_local_ports ;;
+	          cmd_tcp_banner_grab) cmd_tcp_banner_grab ;;
+
+	          cmd_ai_webcam_all) cmd_ai_webcam_all ;;
+	          cmd_ai_webcam_person) cmd_ai_webcam_person ;;
+	          cmd_ai_rtsp) cmd_ai_rtsp ;;
+	          cmd_ai_image) cmd_ai_image ;;
+	          cmd_ai_video) cmd_ai_video ;;
+	          cmd_ai_train) cmd_ai_train ;;
+	          cmd_ai_run) cmd_ai_run ;;
+
+	          cmd_storage_local) cmd_storage_local ;;
+	          cmd_storage_usb) cmd_storage_usb ;;
+	          cmd_storage_install) cmd_storage_install ;;
+ 	          cmd_storage_save_log) cmd_storage_save_log ;;
+
+	          cmd_usb_detect) cmd_usb_detect ;;
+	          cmd_usb_select) cmd_usb_select ;;
+	          cmd_usb_workspace) cmd_usb_workspace ;;
+	          cmd_usb_read) cmd_usb_read ;;
+	          cmd_usb_delete) cmd_usb_delete ;;
+
+	          *)
+  		    echo "[!] Unknown command: $cmd"
+
+  		    # debug tambahan
+  		    echo "[DEBUG] Available commands may be outdated in scenario file"
+
+  		    log_save "Scenario Unknown Command: $cmd"
+  		    ;;
+	        esac
+
+	      done < "${files[$pilih]}"
+
+	      echo "[✔] Selesai"
+	      log_save "Run Scenario $(basename "${files[$pilih]}")"
+
+	    else
+	      echo "[!] Pilihan tidak valid"
+	    fi
+ 	  fi
+	;;
+
+        2)
+          if [ -f ~/scenario_builder.sh ]; then
+    	    bash ~/scenario_builder.sh
+          else
+    	    echo "[!] scenario_builder.sh tidak ditemukan"
+          fi
+	  ;;
+
+	 3)
+   	   ;;
+       esac
+     ;;
+    # =====================
+    # 🚪 EXIT
+    # =====================
+    6)
+      echo -e "${RED}Exiting NETTOOLS...${NC}"
+      sleep 1
+      clear
+      break
+      ;;
+
+    *)
+      echo -e "${RED}Invalid option${NC}"
+      ;;
+
+    esac
+
+
+done
+
+
