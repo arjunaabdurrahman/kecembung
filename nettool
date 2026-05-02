@@ -75,7 +75,9 @@ fi
 
 PASS_FILE="$HOME/.nettool_pass"
 
-mkdir -p "$(dirname "$PASS_FILE")"
+# pastikan folder home valid dulu
+PASS_DIR="$(dirname "$PASS_FILE")"
+mkdir -p "$PASS_DIR"
 
 if [ ! -f "$PASS_FILE" ]; then
   echo "[!] Password belum diset. Jalankan installer dulu."
@@ -86,19 +88,14 @@ echo ""
 read -s -p "Masukkan Password NETTOOLS: " input
 echo ""
 
-# cek kosong
 if [ -z "$input" ]; then
   echo "[!] Password tidak boleh kosong"
   exit 1
 fi
 
-# hash input
 INPUT_HASH=$(echo -n "$input" | sha256sum | awk '{print $1}')
-
-# ambil hash tersimpan
 read -r STORED_HASH < "$PASS_FILE"
 
-# validasi
 if [ "$INPUT_HASH" != "$STORED_HASH" ]; then
   echo "[!] Password salah"
   exit 1
@@ -119,10 +116,31 @@ USB_SELECTED=0
 SCENARIO_DIR="$HOME/nettools_scenarios"
 mkdir -p "$SCENARIO_DIR"
 
+init_storage() {
+  if [ "$storage_mode" = "local" ]; then
+    storage_path="$HOME/nettools_logs"
+  else
+    storage_path="$USB_PATH/NETTOOLS"
+  fi
+  mkdir -p "$storage_path"
+  mkdir -p "$storage_path/captures"  
+}
+
+log_save() {
+  init_storage
+  
+  if [ -z "$storage_path" ]; then
+    echo "[!] storage_path kosong, log dibatalkan"
+    return
+  fi
+
+  mkdir -p "$storage_path"
+  echo "[$(date)] $1" >> "$storage_path/nettools_log.txt"
+}
+
 # =========================
 # COMMAND MAP
 # =========================
-
 
 # =========================
 # COMMAND MAP - IP TOOLS
@@ -377,8 +395,8 @@ cmd_usb_delete() {
         echo "[!] Unsafe path"
         return
       fi
-      if [ -z "$USB_PATH" ] || [ "$USB_PATH" = "/" ]; then
-        echo "[!] Unsafe path blocked"
+      if [[ "$USB_PATH" != /media/* && "$USB_PATH" != /run/media/* ]]; then
+        echo "[!] Path bukan USB mount valid"
         return
       fi
       if [ ! -d "$USB_PATH" ]; then
@@ -612,28 +630,6 @@ cmd_scenario_list() {
   bash "${scenarios[$index]}"
 
   log_save "Run Scenario: $(basename "${scenarios[$index]}")"
-}
-
-init_storage() {
-  if [ "$storage_mode" = "local" ]; then
-    storage_path="$HOME/nettools_logs"
-  else
-    storage_path="$USB_PATH/NETTOOLS"
-  fi
-  mkdir -p "$storage_path"
-  mkdir -p "$storage_path/captures"  
-}
-
-log_save() {
-  init_storage
-  
-  if [ -z "$storage_path" ]; then
-    echo "[!] storage_path kosong, log dibatalkan"
-    return
-  fi
-
-  mkdir -p "$storage_path"
-  echo "[$(date)] $1" >> "$storage_path/nettools_log.txt"
 }
 
 # =========================

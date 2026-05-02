@@ -9,28 +9,87 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
-
-LOCK_FILE="$HOME/.nettool_installed"
-
-# =========================
-# 🎬 LOADING
-# =========================
-loading() {
-  echo -ne "${CYAN}$1${NC}"
-  for i in {1..3}; do
-    echo -ne "."
-    sleep 0.3
-  done
-  echo ""
-}
-
 ok() {
   echo -e "${GREEN}[✔] $1${NC}"
 }
 
 fail() {
   echo -e "${RED}[✘] $1${NC}"
+}
+
+REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
+
+LOCK_FILE="$HOME/.nettool_installed"
+
+trap "echo -e '\n${YELLOW}[!] Installer interrupted safely${NC}'; exit 1" SIGINT
+
+# =========================
+# 🎬 LOADING
+# =========================
+
+loading() {
+  local text="$1"
+  local total=20
+
+  echo -e "${CYAN}${text}${NC}"
+
+  echo -ne "["
+  for ((i=0; i<total; i++)); do
+    echo -ne "█"
+    sleep 0.03
+  done
+  echo -e "] done"
+}
+
+spinner() {
+  local pid=$1
+  local text="$2"
+
+  local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+
+  echo -ne "${CYAN}${text}${NC} "
+
+  while kill -0 $pid 2>/dev/null; do
+    for i in $(seq 0 8); do
+      echo -ne "\r${CYAN}${text} ${spin:$i:1}${NC}"
+      sleep 0.1
+    done
+  done
+
+  echo -e "\r${GREEN}${text} ✔${NC}"
+}
+
+apt_install() {
+  local pkgs="$1"
+
+  echo -e "${CYAN}[~] Installing: $pkgs${NC}"
+
+  (
+    sudo apt update -y >/dev/null 2>&1
+    sudo apt install -y $pkgs >/dev/null 2>&1
+  ) &
+
+  pid=$!
+
+  spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+
+  i=0
+  while kill -0 $pid 2>/dev/null; do
+    i=$(( (i+1) % 10 ))
+    echo -ne "\r${CYAN}[~] Installing ${spin:$i:1} ${NC}"
+    sleep 0.1
+  done
+
+  wait $pid
+  exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
+    echo -e "\r${GREEN}[✔] Installation complete        ${NC}"
+    return 0
+  else
+    echo -e "\r${RED}[✘] Installation failed         ${NC}"
+    return 1
+  fi
 }
 
 # =========================
@@ -59,16 +118,13 @@ echo -e "${GREEN}   NETTOOLS INSTALLER${NC}"
 echo -e "${CYAN}==============================${NC}"
 echo ""
 
-loading "[~] Checking system"
-
 # =========================
 # 📦 DEPENDENCIES
 # =========================
-loading "[~] Installing dependencies"
 
-if sudo apt update -y >/dev/null 2>&1 && \
-   sudo apt install -y nmap netcat-openbsd iproute2 dialog figlet python3 python3-pip wget >/dev/null 2>&1
-then
+loading "[~] Checking system"
+
+if apt_install "nmap netcat-openbsd iproute2 dialog figlet python3 python3-pip wget"; then
   ok "Dependencies installed"
 else
   fail "Failed install dependencies"
@@ -80,15 +136,29 @@ fi
 # =========================
 loading "[~] Setting AI environment"
 
-python3 -m venv ~/yolo-env >/dev/null 2>&1
-source ~/yolo-env/bin/activate
+python3 -m venv ~/nettool-env >/dev/null 2>&1
 
-if pip install --quiet ultralytics opencv-python --no-cache-dir; then
-  pip install --quiet torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-  rm -rf ~/.cache/pip >/dev/null 2>&1
-  ok "AI environment ready"
+if python3 -m venv ~/nettool-env >/dev/null 2>&1; then
+
+  "$HOME/nettool-env/bin/pip" install --upgrade pip --quiet
+
+  if "$HOME/nettool-env/bin/pip" install ultralytics opencv-python --no-cache-dir --quiet; then
+    "$HOME/nettool-env/bin/pip" install torch torchvision torchaudio \
+      --index-url https://download.pytorch.org/whl/cpu --quiet
+
+    if "$HOME/nettool-env/bin/python" -c "import ultralytics, cv2" >/dev/null 2>&1; then
+      ok "AI environment ready"
+    else
+      fail "Import check failed"
+    fi
+
+  else
+    fail "AI setup failed"
+  fi
+
 else
-  fail "AI setup failed"
+  fail "Failed to create venv"
+  exit 1
 fi
 
 # =========================
