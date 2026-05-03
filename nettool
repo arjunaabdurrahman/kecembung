@@ -13,22 +13,181 @@ NC='\033[0m'
 set -e
 set -o pipefail
 
+CURRENT_PID=0
+
 # =========================
-# 🛑 CTRL+C HANDLER
+#  SAFE EXECUTION SYSTEM
+# =========================
+
+# CORE SAFE RUN (dasar semua eksekusi)
+safe_run() {
+  local timeout="$1"
+  shift
+
+  set +e
+  set +o pipefail
+
+  timeout "$timeout" "$@"
+  local status=$?
+
+  set -e
+  set -o pipefail
+
+  if [ $status -eq 124 ]; then
+    echo "[!] SAFE: Timeout ($timeout detik)"
+  elif [ $status -ne 0 ]; then
+    echo "[!] SAFE: Error (code $status)"
+  fi
+
+  return $status
+}
+
+# =========================
+# SAFE AI RUN 
+# =========================
+safe_ai() {
+  local timeout="$1"
+  shift
+
+  if [ "$INTERRUPTED" -eq 1 ]; then
+    echo "[!] SAFE AI: dibatalkan (CTRL+C)"
+    INTERRUPTED=0
+    return 1
+  fi
+
+  set +e
+  timeout "$timeout" "$@"
+  local status=$?
+  set -e
+
+  if [ $status -eq 124 ]; then
+    echo "[!] SAFE AI: timeout ($timeout detik)"
+  elif [ $status -ne 0 ]; then
+    echo "[!] SAFE AI: crash (code $status)"
+  fi
+
+  return $status
+}
+
+# =========================
+# SAFE MENU RUN 
+# =========================
+safe_menu() {
+  set +e
+  "$@"
+  local status=$?
+  set -e
+
+  if [ $status -ne 0 ]; then
+    echo "[!] SAFE MENU: error di menu command"
+  fi
+
+  return $status
+}
+
+# =========================
+# SAFE BACKGROUND RUN 
+# =========================
+safe_bg() {
+  set +e
+  "$@" &
+  local pid=$!
+  set -e
+
+  echo $pid
+  return 0
+}
+
+# =========================
+# 🔄 AUTO RECOVERY SYSTEM
+# =========================
+
+RECOVERY_MODE=0
+CRASH_FLAG=0
+
+# =========================
+# 🛑 GLOBAL CTRL + C SAFE HANDLER
 # =========================
 
 INTERRUPTED=0
+RETURN_TO_MAIN=0
+RECOVERY_MODE=0
+
+# =========================
+# 🔁 PROCESS TRACKING
+# =========================
+CURRENT_PID=0
 
 trap_ctrlc() {
   echo ""
-  echo -e "${YELLOW}[!] CTRL+C terdeteksi, kembali ke menu...${NC}"
-  sleep 1
-  clear
+  echo "[!] STOP SIGNAL → RECOVERY MODE"
+
   INTERRUPTED=1
+  RECOVERY_MODE=1
+
+  # kill AI / process utama
+  if [ "$CURRENT_PID" -ne 0 ] 2>/dev/null; then
+    kill -9 "$CURRENT_PID" 2>/dev/null
+    wait "$CURRENT_PID" 2>/dev/null
+    CURRENT_PID=0
+  fi
+
+  # kill semua child process dari script ini
+  pkill -P $$ 2>/dev/null
+
+  # fallback kill process yang mungkin nyangkut (AI/OpenCV/nmap dll ringan)
+  pkill -f "ai_detect.py" 2>/dev/null
+  pkill -f "ai_train.py" 2>/dev/null
+
+  sleep 0.3
+  clear
+
+  echo "[✔] Recovery selesai → kembali ke menu"
 }
 
 trap trap_ctrlc SIGINT
-stty -echoctl 2>/dev/null
+
+# =========================
+# 🛡️ SELF-HEAL SAFE RUNNER
+# =========================
+
+CURRENT_CHILD=""
+
+safe_run() {
+  local timeout_sec=$1
+  shift
+  local cmd=("$@")
+
+  # jalankan dengan timeout + background control
+  (
+    "${cmd[@]}"
+  ) &
+
+  CURRENT_CHILD=$!
+
+  # tunggu dengan timeout manual
+  for ((i=0; i<timeout_sec; i++)); do
+    sleep 1
+
+    # kalau process mati sendiri
+    if ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+      CURRENT_CHILD=""
+      return 0
+    fi
+
+    # kalau user CTRL+C
+    if [ "$RECOVERY_MODE" -eq 1 ]; then
+      kill -9 "$CURRENT_CHILD" 2>/dev/null
+      CURRENT_CHILD=""
+      return 1
+    fi
+  done
+
+  # kalau timeout habis
+  echo "[!] TIMEOUT - process dihentikan otomatis"
+  kill -9 "$CURRENT_CHILD" 2>/dev/null
+  CURRENT_CHILD=""
+}
 
 # =========================
 # 🧠 PYTHON ENV AUTO DETECT + AUTO CREATE
@@ -143,6 +302,9 @@ echo ""
 # =========================
 storage_mode="local"
 storage_path="$HOME/nettools_logs"
+
+WATCHDOG_FILE="/tmp/nettools_watchdog"
+touch "$WATCHDOG_FILE"
 
 USB_PATH=""
 USB_SELECTED=0
@@ -480,7 +642,11 @@ cmd_ai_webcam_all() {
     return
   fi
   
-  "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" all
+  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" all
+  CURRENT_PID=$!
+
+  wait $CURRENT_PID
+  CURRENT_PID=0
   log_save "AI Webcam All"
 }
 
@@ -493,7 +659,11 @@ cmd_ai_webcam_person() {
     return
   fi
   
-  "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" person
+  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" person
+  CURRENT_PID=$!
+
+  wait $CURRENT_PID
+  CURRENT_PID=0
   log_save "AI Webcam Person"
 }
 
@@ -506,7 +676,7 @@ cmd_ai_rtsp() {
     return
   fi
   
-  "$PYTHON" "$HOME/ai_detect.py" "$rtsp" "$storage_path/captures" all
+  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" "$rtsp" "$storage_path/captures" all
   log_save "AI CCTV RTSP"
 }
 
@@ -518,7 +688,7 @@ cmd_ai_image() {
     return
   fi
   
-  "$PYTHON" "$HOME/ai_detect.py" "$img" "$storage_path/captures" all
+  safe_ai 120 "$PYTHON" "$HOME/ai_detect.py" "$img" "$storage_path/captures" all
   log_save "AI Image Detect"
 }
 
@@ -536,7 +706,11 @@ cmd_ai_video() {
     return
   fi
 
-  "$PYTHON" "$HOME/ai_detect.py" "$vid" "$storage_path/captures" all
+  safe_ai 120 "$PYTHON" "$HOME/ai_detect.py" "$vid" "$storage_path/captures" all
+  CURRENT_PID=$!
+
+  wait $CURRENT_PID
+  CURRENT_PID=0
   log_save "AI Video Detect"
 }
 
@@ -583,8 +757,11 @@ cmd_ai_train() {
     return
   fi
 
-  "$PYTHON" "$HOME/ai_train.py" "$data"
+  safe_ai 60 "$PYTHON" "$HOME/ai_train.py" "$data"
+  CURRENT_PID=$!
 
+  wait $CURRENT_PID
+  CURRENT_PID=0
   log_save "Custom AI Training"
 }
 
@@ -639,8 +816,7 @@ cmd_ai_run() {
     read -p "RTSP URL: " src
   fi
 
-  "$PYTHON" "$HOME/ai_detect.py" "$src" "$storage_path/captures" all "$model"
-
+  safe_ai 60 "$PYTHON" "$HOME/ai_detect.py" "$src" "$storage_path/captures" all "$model"
   log_save "Custom AI Run"
 }
 
@@ -699,6 +875,16 @@ done
 
 while true; do
 
+  if [ "$RECOVERY_MODE" -eq 1 ]; then
+    echo -e "${GREEN}[AUTO-RECOVERY] Kembali ke MENU UTAMA...${NC}"
+    RECOVERY_MODE=0
+    continue
+  fi
+
+  if [ "$CRASH_FLAG" -eq 1 ]; then
+    CRASH_FLAG=0
+  fi
+
   if [ "$INTERRUPTED" -eq 1 ]; then
     INTERRUPTED=0
     continue
@@ -733,6 +919,8 @@ while true; do
     # =====================
     1)
       while true; do
+        
+        echo "$(date +%s)" > "$WATCHDOG_FILE"
 
         if [ "$INTERRUPTED" -eq 1 ]; then
           INTERRUPTED=0
