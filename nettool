@@ -1119,7 +1119,6 @@ while true; do
 	    else
 	      echo "[!] Pilihan tidak valid"
 	    fi
- 	  fi
 	;;
 
         2)
