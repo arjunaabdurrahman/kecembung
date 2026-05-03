@@ -125,24 +125,25 @@ trap_ctrlc() {
   INTERRUPTED=1
   RECOVERY_MODE=1
 
-  # kill AI / process utama
+  # kill AI/process utama
   if [ "$CURRENT_PID" -ne 0 ] 2>/dev/null; then
     kill -9 "$CURRENT_PID" 2>/dev/null
     wait "$CURRENT_PID" 2>/dev/null
     CURRENT_PID=0
   fi
 
-  # kill semua child process dari script ini
+  # kill child process
   pkill -P $$ 2>/dev/null
 
-  # fallback kill process yang mungkin nyangkut (AI/OpenCV/nmap dll ringan)
+  # cleanup AI process (optional tapi aman)
   pkill -f "ai_detect.py" 2>/dev/null
   pkill -f "ai_train.py" 2>/dev/null
 
-  sleep 0.3
+  sleep 0.2
+
   clear
 
-  echo "[✔] Recovery selesai → kembali ke menu"
+  echo "[✔] Recovery selesai → kembali ke MENU UTAMA"
 }
 
 trap trap_ctrlc SIGINT
