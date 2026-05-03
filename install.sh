@@ -217,28 +217,26 @@ ok "Command linked"
 # =========================
 
 if [ ! -f "$HOME/.nettool_pass" ]; then
+  echo -e "${CYAN}[~] Silakan buat password untuk NETTOOLS${NC}"
   echo ""
 
   while true; do
-    read -s -p "Buat password NETTOOLS: " pass
+    read -s -p "Buat password NETTOOLS: " pass < /dev/tty
     echo ""
 
-    # kalau kosong → ulang terus
     if [ -z "$pass" ]; then
       echo -e "${YELLOW}[!] Password tidak boleh kosong${NC}"
       continue
     fi
 
-    read -s -p "Konfirmasi password: " pass2
+    read -s -p "Konfirmasi password: " pass2 < /dev/tty
     echo ""
 
-    # kalau tidak sama → ulang dari awal
     if [ "$pass" != "$pass2" ]; then
       echo -e "${RED}[!] Password tidak sama, ulangi${NC}"
       continue
     fi
 
-    # sukses → simpan
     echo -n "$pass" | sha256sum | awk '{print $1}' > "$HOME/.nettool_pass"
     ok "Password berhasil diset"
     break
