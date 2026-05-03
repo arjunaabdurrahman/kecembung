@@ -35,38 +35,72 @@ stty -echoctl 2>/dev/null
 # =========================
 ENV_PATH="$HOME/nettool-env"
 
-if [ ! -d "$ENV_PATH" ] || [ ! -f "$ENV_PATH/bin/python" ] || [ ! -f "$ENV_PATH/bin/pip" ]; then
+if [ ! -d "$ENV_PATH" ] || \
+   [ ! -f "$ENV_PATH/bin/python" ] || \
+   [ ! -f "$ENV_PATH/bin/pip" ]; then
+
     echo "[~] AI environment tidak valid, memperbaiki..."
 
+    # safety check biar gak hapus path aneh
     if [[ "$ENV_PATH" == "$HOME/"* ]]; then
-      rm -rf "$ENV_PATH"
+        rm -rf "$ENV_PATH"
+    else
+        echo "[!] ENV_PATH tidak aman"
+        exit 1
     fi
 
+    # buat ulang environment
     python3 -m venv "$ENV_PATH" || {
-      echo "[!] Gagal membuat virtual environment"
-      exit 1
-}
+        echo "[!] Gagal membuat virtual environment"
+        exit 1
+    }
 
-"$ENV_PATH/bin/pip" install --upgrade pip
-"$ENV_PATH/bin/pip" install --upgrade pip || exit 1
-"$ENV_PATH/bin/pip" install ultralytics opencv-python --no-cache-dir || exit 1
-"$ENV_PATH/bin/pip" install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu || exit 1
-if ! "$ENV_PATH/bin/python" -c "import ultralytics, cv2" >/dev/null 2>&1; then
-  echo "[!] Dependency Python tidak lengkap"
-  exit 1
+    echo "[~] Installing AI dependencies..."
+
+    "$ENV_PATH/bin/pip" install --upgrade pip || exit 1
+
+    "$ENV_PATH/bin/pip" install ultralytics opencv-python \
+        --no-cache-dir || exit 1
+
+    "$ENV_PATH/bin/pip" install torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cpu || exit 1
 fi
 
-fi
+# =========================
+# 🔍 VALIDATION
+# =========================
 
 PYTHON="$ENV_PATH/bin/python"
+
 if [ ! -x "$PYTHON" ]; then
-  echo "[!] Python environment tidak valid"
-  exit 1
+    echo "[!] Python environment tidak valid"
+    exit 1
 fi
 
+# cek apakah library benar-benar bisa diimport
+if ! "$PYTHON" -c "import ultralytics, cv2" >/dev/null 2>&1; then
+    echo "[!] Dependency Python tidak lengkap, memperbaiki..."
+
+    "$ENV_PATH/bin/pip" install ultralytics opencv-python \
+        --no-cache-dir || exit 1
+
+    "$ENV_PATH/bin/pip" install torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cpu || exit 1
+
+    # cek ulang
+    if ! "$PYTHON" -c "import ultralytics, cv2" >/dev/null 2>&1; then
+        echo "[!] Gagal memperbaiki dependency"
+        exit 1
+    fi
+fi
+
+# =========================
+# 🔐 SYSTEM CHECK
+# =========================
+
 if ! command -v sudo >/dev/null 2>&1; then
-  echo "[!] sudo tidak tersedia"
-  exit 1
+    echo "[!] sudo tidak tersedia"
+    exit 1
 fi
 
 # =========================
@@ -122,20 +156,28 @@ init_storage() {
   else
     storage_path="$USB_PATH/NETTOOLS"
   fi
+
+  # safety check (hindari path kosong / root)
+  if [ -z "$storage_path" ] || [ "$storage_path" = "/" ]; then
+    echo "[!] storage_path tidak valid"
+    storage_path="$HOME/nettools_logs"
+  fi
+
   mkdir -p "$storage_path"
-  mkdir -p "$storage_path/captures"  
+  mkdir -p "$storage_path/captures"
 }
 
 log_save() {
   init_storage
-  
-  if [ -z "$storage_path" ]; then
-    echo "[!] storage_path kosong, log dibatalkan"
+
+  if [ -z "$storage_path" ] || [ "$storage_path" = "/" ]; then
+    echo "[!] Log dibatalkan (path tidak valid)"
     return
   fi
 
-  mkdir -p "$storage_path"
-  echo "[$(date)] $1" >> "$storage_path/nettools_log.txt"
+  mkdir -p "$storage_path" 2>/dev/null
+
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$storage_path/nettools_log.txt"
 }
 
 # =========================
@@ -151,6 +193,7 @@ cmd_lihat_ip() {
 }
 
 cmd_scan_jaringan() {
+  init_storage
   if ! command -v nmap >/dev/null 2>&1; then
     echo "[!] nmap belum terinstall"
     return
@@ -161,6 +204,7 @@ cmd_scan_jaringan() {
 }
 
 cmd_ping_ip() {
+  init_storage
   read -p "Target IP: " target
   ping -c 4 "$target"
 }
@@ -248,21 +292,25 @@ cmd_reset_ip() {
 # =========================
 
 cmd_tcp_scan_port() {
+  init_storage
   read -p "Target: " t
   nmap -sT "$t"
 }
 
 cmd_tcp_service_detection() {
+  init_storage
   read -p "Target: " t
   nmap -sV "$t"
 }
 
 cmd_tcp_range_scan() {
+  init_storage
   read -p "Target: " t
   nmap -p 1-1000 "$t"
 }
 
 cmd_tcp_specific_port() {
+  init_storage
   read -p "Target: " t
   read -p "Port: " p
   nmap -p "$p" "$t"
@@ -322,6 +370,7 @@ cmd_storage_install() {
 }
 
 cmd_storage_save_log() {
+  init_storage
   read -p "Ketik YES untuk save log: " confirm
 
   if [ "$confirm" = "YES" ]; then
