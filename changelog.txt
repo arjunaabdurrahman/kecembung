@@ -1,0 +1,4 @@
+- Sistem auto update ditambahkan
+- Perbaikan recovery mode
+- Optimasi AI tools
+- Perbaikan bug kecil

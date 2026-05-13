@@ -10,41 +10,39 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-set -e
+set +e
 set -o pipefail
 
 CURRENT_PID=0
+CURRENT_CHILD=""
+RECOVERY_MODE=0
+INTERRUPTED=0
+RETURN_TO_MAIN=0
+CRASH_FLAG=0
 
-# =========================
-#  SAFE EXECUTION SYSTEM
-# =========================
+kill_process() {
+  local pid="$1"
 
-# CORE SAFE RUN (dasar semua eksekusi)
-safe_run() {
-  local timeout="$1"
-  shift
-
-  set +e
-  set +o pipefail
-
-  timeout "$timeout" "$@"
-  local status=$?
-
-  set -e
-  set -o pipefail
-
-  if [ $status -eq 124 ]; then
-    echo "[!] SAFE: Timeout ($timeout detik)"
-  elif [ $status -ne 0 ]; then
-    echo "[!] SAFE: Error (code $status)"
+  if [ -z "$pid" ]; then
+    return
   fi
 
-  return $status
+  # coba kill normal dulu
+  kill "$pid" 2>/dev/null
+
+  # tunggu dikit
+  sleep 0.5
+
+  # kalau masih hidup, baru paksa
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+  fi
 }
 
 # =========================
 # SAFE AI RUN 
 # =========================
+
 safe_ai() {
   local timeout="$1"
   shift
@@ -56,10 +54,25 @@ safe_ai() {
   fi
 
   set +e
-  timeout "$timeout" "$@"
+
+  # jalankan dalam process group sendiri
+  if [ "$timeout" -eq 0 ]; then
+    setsid "$@" &
+  else
+    timeout "$timeout" setsid "$@" &
+  fi
+
+  CURRENT_PID=$!
+
+  # tunggu process selesai (tanpa polling manual)
+  wait "$CURRENT_PID"
   local status=$?
+
+  CURRENT_PID=0
+
   set -e
 
+  # interpretasi status
   if [ $status -eq 124 ]; then
     echo "[!] SAFE AI: timeout ($timeout detik)"
   elif [ $status -ne 0 ]; then
@@ -90,104 +103,238 @@ safe_menu() {
 # =========================
 safe_bg() {
   set +e
+
   "$@" &
   local pid=$!
+
   set -e
+
+  CURRENT_CHILD="$pid"
+
+  echo "[~] Background process started (PID: $pid)"
+
+  # update watchdog sekali biar gak dianggap freeze
+  echo "$(date +%s)" > "$WATCHDOG_FILE"
 
   echo $pid
   return 0
 }
 
 # =========================
-# 🔄 AUTO RECOVERY SYSTEM
+# 🔄 UPDATE SYSTEM CONFIG
 # =========================
+CURRENT_VERSION="1.0.0"
+REPO_URL="https://raw.githubusercontent.com/USERNAME/REPO/main"
 
-RECOVERY_MODE=0
-CRASH_FLAG=0
-
-# =========================
-# 🛑 GLOBAL CTRL + C SAFE HANDLER
-# =========================
-
-INTERRUPTED=0
-RETURN_TO_MAIN=0
-RECOVERY_MODE=0
+VERSION_URL="$REPO_URL/version.txt"
+CHANGELOG_URL="$REPO_URL/changelog.txt"
+SCRIPT_URL="$REPO_URL/nettool"
+INSTALLER_URL="$REPO_URL/install.sh"
 
 # =========================
 # 🔁 PROCESS TRACKING
 # =========================
-CURRENT_PID=0
 
 trap_ctrlc() {
+
+  # anti spam ctrl+c
+  if [ "$RECOVERY_MODE" -eq 1 ]; then
+    return
+  fi
+
   echo ""
-  echo "[!] STOP SIGNAL → RECOVERY MODE"
+  echo "[!] CTRL+C DETECTED → RETURN TO MAIN MENU"
 
   INTERRUPTED=1
   RECOVERY_MODE=1
+  RETURN_TO_MAIN=1
 
-  # kill AI/process utama
+  # kill AI/main process
   if [ "$CURRENT_PID" -ne 0 ] 2>/dev/null; then
-    kill -9 "$CURRENT_PID" 2>/dev/null
+    kill_process "$CURRENT_PID"
     wait "$CURRENT_PID" 2>/dev/null
     CURRENT_PID=0
   fi
 
-  # kill child process
-  pkill -P $$ 2>/dev/null
+  # kill background child
+  if [ -n "$CURRENT_CHILD" ]; then
+    kill -TERM -"$CURRENT_CHILD" 2>/dev/null
+    sleep 0.3
+    kill -TERM -"$CURRENT_CHILD" 2>/dev/null
+    sleep 0.3
 
-  # cleanup AI process (safe)
-  pkill -f "ai_detect.py" 2>/dev/null
-  pkill -f "ai_train.py" 2>/dev/null
+    if kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+        kill -KILL -"$CURRENT_CHILD" 2>/dev/null
+    fi
+    wait "$CURRENT_CHILD" 2>/dev/null
+    CURRENT_CHILD=""
+  fi
+
+  # kill semua child process script
+  pkill -TERM -P $$ 2>/dev/null
 
   sleep 0.2
-  clear
-
-  # FORCE FLAG (ini kuncinya)
-  RETURN_TO_MAIN=1
 }
 
 trap trap_ctrlc SIGINT
+
+reset_state() {
+  INTERRUPTED=0
+  RETURN_TO_MAIN=0
+  RECOVERY_MODE=0
+  CRASH_FLAG=0
+
+  # kill sisa child process kalau ada
+  if [ -n "$CURRENT_CHILD" ]; then
+    kill_process "$CURRENT_CHILD"
+    CURRENT_CHILD=""
+  fi
+
+  CURRENT_PID=0
+}
 
 # =========================
 # 🛡️ SELF-HEAL SAFE RUNNER
 # =========================
 
-CURRENT_CHILD=""
-
 safe_run() {
-  local timeout_sec=$1
+  local timeout_sec="$1"
   shift
   local cmd=("$@")
 
-  # jalankan dengan timeout + background control
-  (
-    "${cmd[@]}"
-  ) &
+  CURRENT_CHILD=""
 
+  # jalankan process dalam group sendiri
+  setsid "${cmd[@]}" &
   CURRENT_CHILD=$!
 
-  # tunggu dengan timeout manual
-  for ((i=0; i<timeout_sec; i++)); do
-    sleep 1
+  local status=0
 
-    # kalau process mati sendiri
-    if ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
-      CURRENT_CHILD=""
-      return 0
-    fi
+  # timeout mode
+  if [ "$timeout_sec" -gt 0 ]; then
 
-    # kalau user CTRL+C
-    if [ "$RECOVERY_MODE" -eq 1 ]; then
-      kill -9 "$CURRENT_CHILD" 2>/dev/null
-      CURRENT_CHILD=""
-      return 1
-    fi
-  done
+    for ((i=0; i<timeout_sec; i++)); do
 
-  # kalau timeout habis
-  echo "[!] TIMEOUT - process dihentikan otomatis"
-  kill -9 "$CURRENT_CHILD" 2>/dev/null
+      # kalau sudah mati → langsung keluar
+      if ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+        wait "$CURRENT_CHILD" 2>/dev/null
+        status=$?
+        CURRENT_CHILD=""
+        return $status
+      fi
+
+      sleep 1
+
+      # kalau user interrupt
+      if [ "$RECOVERY_MODE" -eq 1 ]; then
+        kill -TERM -"$CURRENT_CHILD" 2>/dev/null
+        sleep 0.3
+
+  	if kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+    	    kill -KILL -"$CURRENT_CHILD" 2>/dev/null
+	fi
+        wait "$CURRENT_CHILD" 2>/dev/null
+        CURRENT_CHILD=""
+        return 1
+      fi
+    done
+
+    echo "[!] SAFE RUN: timeout (${timeout_sec}s)"
+
+    # kill entire process group
+    kill -9 -"$CURRENT_CHILD" 2>/dev/null
+    wait "$CURRENT_CHILD" 2>/dev/null
+
+    CURRENT_CHILD=""
+    return 124
+  fi
+
+  # NO TIMEOUT MODE
+  wait "$CURRENT_CHILD"
+  status=$?
+
   CURRENT_CHILD=""
+
+  if [ $status -ne 0 ]; then
+    echo "[!] SAFE RUN: error (code $status)"
+  fi
+
+  return $status
+}
+
+# =========================
+# 🐶 WATCHDOG SYSTEM
+# =========================
+watchdog_loop() {
+  local recovery_lock=0
+
+  while true; do
+    sleep 2
+
+    WATCHDOG_TIMEOUT=10
+
+    # kalau lagi recovery, skip penuh
+    if [ "$RECOVERY_MODE" -eq 1 ]; then
+      continue
+    fi
+
+    # file harus ada
+    if [ ! -f "$WATCHDOG_FILE" ]; then
+      continue
+    fi
+
+    last=$(cat "$WATCHDOG_FILE" 2>/dev/null)
+
+    # validasi numeric
+    if ! [[ "$last" =~ ^[0-9]+$ ]]; then
+      continue
+    fi
+
+    now=$(date +%s)
+    diff=$((now - last))
+
+    # safety guard
+    if [ "$diff" -lt 0 ]; then
+      continue
+    fi
+
+    if [ "$diff" -ge "$WATCHDOG_TIMEOUT" ]; then
+
+      # anti double trigger
+      if [ "$recovery_lock" -eq 1 ]; then
+        continue
+      fi
+      recovery_lock=1
+
+      echo ""
+      echo "[!] WATCHDOG: system freeze terdeteksi (${diff}s)"
+
+      # kill child process
+      if [ -n "$CURRENT_CHILD" ]; then
+        kill_process "$CURRENT_CHILD"
+        wait "$CURRENT_CHILD" 2>/dev/null
+        CURRENT_CHILD=""
+      fi
+
+      # kill main process
+      if [ "$CURRENT_PID" -ne 0 ] 2>/dev/null; then
+        kill_process "$CURRENT_PID"
+        wait "$CURRENT_PID" 2>/dev/null
+        CURRENT_PID=0
+      fi
+
+      pkill -P $$ 2>/dev/null
+
+      RETURN_TO_MAIN=1
+      INTERRUPTED=1
+
+      # write recovery heartbeat (beda marker)
+      echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+      log_save "WATCHDOG TRIGGERED (freeze ${diff}s)"
+    fi
+
+  done
 }
 
 # =========================
@@ -269,6 +416,12 @@ fi
 
 PASS_FILE="$HOME/.nettool_pass"
 
+mkdir -p "$(dirname "$PASS_FILE")"
+
+if [ -f "$PASS_FILE" ]; then
+  chmod 600 "$PASS_FILE"
+fi
+
 # pastikan folder home valid dulu
 PASS_DIR="$(dirname "$PASS_FILE")"
 mkdir -p "$PASS_DIR"
@@ -298,6 +451,119 @@ fi
 echo "[✔] Akses diterima"
 echo ""
 
+sleep 1
+
+check_update() {
+
+  echo "[~] Mengecek update..."
+
+  # cek internet cepat
+  ping -c 1 8.8.8.8 &>/dev/null || return
+
+  LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL")
+
+  if [ -z "$LATEST_VERSION" ]; then
+    echo "[!] Gagal ambil versi terbaru"
+    return
+  fi
+
+  if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
+
+    echo ""
+    echo "================================="
+    echo "⚠️ UPDATE TERSEDIA!"
+    echo "Versi kamu : $CURRENT_VERSION"
+    echo "Versi baru : $LATEST_VERSION"
+    echo ""
+
+    echo "Perubahan:"
+    curl -s "$CHANGELOG_URL"
+    echo ""
+
+    echo "1. Update sekarang"
+    echo "2. Nanti"
+    echo "================================="
+
+    IFS= read -r -p "Pilih: " pilih
+
+    case $pilih in
+      1)
+        do_update
+        ;;
+      2)
+        echo "[~] Melewati update..."
+        ;;
+      *)
+        echo "[!] Pilihan tidak valid"
+        ;;
+    esac
+
+  fi
+}
+
+do_update() {
+
+  echo ""
+  echo "[~] Memulai update NETTOOLS..."
+  sleep 1
+
+  TMP_DIR="/tmp/nettool_update"
+  mkdir -p "$TMP_DIR"
+
+  SCRIPT_PATH="$(realpath "$0")"
+  TMP_FILE="$TMP_DIR/nettool_new"
+
+  echo "[~] Downloading update..."
+
+  curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$TMP_FILE"
+
+  # VALIDASI download
+  if [ ! -s "$TMP_FILE" ]; then
+    echo "[!] Gagal download update (file kosong)"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  # VALIDASI basic (biar bukan file rusak)
+  if ! head -n 1 "$TMP_FILE" | grep -q "#!/bin/bash"; then
+    echo "[!] File update tidak valid!"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  chmod +x "$TMP_FILE"
+
+  echo "[~] Backup script lama..."
+  cp "$SCRIPT_PATH" "$SCRIPT_PATH.bak"
+
+  if [ $? -ne 0 ]; then
+    echo "[!] Gagal backup"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  echo "[~] Mengganti script..."
+
+  mv "$TMP_FILE" "$SCRIPT_PATH"
+  chmod +x "$SCRIPT_PATH"
+
+  if [ $? -ne 0 ]; then
+    echo "[!] Gagal replace script!"
+    echo "[~] Restore backup..."
+    cp "$SCRIPT_PATH.bak" "$SCRIPT_PATH"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  rm -rf "$TMP_DIR"
+
+  echo "[✔] Update berhasil!"
+  echo "[~] Restarting NETTOOLS..."
+  sleep 1
+
+  exec "$SCRIPT_PATH"
+}
+
 # =========================
 # 💾 STORAGE SYSTEM
 # =========================
@@ -306,6 +572,10 @@ storage_path="$HOME/nettools_logs"
 
 WATCHDOG_FILE="/tmp/nettools_watchdog"
 touch "$WATCHDOG_FILE"
+echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+watchdog_loop &
+WATCHDOG_PID=$!
 
 USB_PATH=""
 USB_SELECTED=0
@@ -314,15 +584,23 @@ SCENARIO_DIR="$HOME/nettools_scenarios"
 mkdir -p "$SCENARIO_DIR"
 
 init_storage() {
+
+  if [ -z "$storage_mode" ]; then
+    storage_mode="local"
+  fi
+
   if [ "$storage_mode" = "local" ]; then
     storage_path="$HOME/nettools_logs"
   else
-    storage_path="$USB_PATH/NETTOOLS"
+    if [ -z "$USB_PATH" ]; then
+      storage_mode="local"
+      storage_path="$HOME/nettools_logs"
+    else
+      storage_path="$USB_PATH/NETTOOLS"
+    fi
   fi
 
-  # safety check (hindari path kosong / root)
   if [ -z "$storage_path" ] || [ "$storage_path" = "/" ]; then
-    echo "[!] storage_path tidak valid"
     storage_path="$HOME/nettools_logs"
   fi
 
@@ -331,14 +609,13 @@ init_storage() {
 }
 
 log_save() {
+
   init_storage
 
-  if [ -z "$storage_path" ] || [ "$storage_path" = "/" ]; then
-    echo "[!] Log dibatalkan (path tidak valid)"
-    return
+  if [ ! -d "$storage_path" ]; then
+    echo "[!] Storage path invalid"
+    return 1
   fi
-
-  mkdir -p "$storage_path" 2>/dev/null
 
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$storage_path/nettools_log.txt"
 }
@@ -489,7 +766,7 @@ cmd_tcp_banner_grab() {
     return
   fi
   read -p "Target: " t
-  nc "$t" 80
+  nc -w 3 "$t" 80
 }
 
 # =========================
@@ -520,7 +797,7 @@ cmd_storage_install() {
   if [ -z "$pkg" ]; then
     echo "[!] Tidak ada input"
   else
-    sudo apt update
+    sudo apt update -y >/dev/null 2>&1
     sudo apt install -y "$pkg"
 
     if [ $? -eq 0 ]; then
@@ -533,23 +810,29 @@ cmd_storage_install() {
 }
 
 cmd_storage_save_log() {
+
   init_storage
+
   read -p "Ketik YES untuk save log: " confirm
 
-  if [ "$confirm" = "YES" ]; then
-    init_storage
-    LOG_SRC="$HOME/nettools_logs/nettools_log.txt"
-
-    if [ ! -f "$LOG_SRC" ]; then
-      echo "[!] Log file belum ada"
-      return
-    fi
-
-    cp "$LOG_SRC" "$storage_path/"
-    echo "[✔] Log berhasil disimpan"
-  else
+  if [ "$confirm" != "YES" ]; then
     echo "[x] Dibatalkan"
+    return
   fi
+
+  LOG_SRC="$HOME/nettools_logs/nettools_log.txt"
+
+  if [ ! -f "$LOG_SRC" ]; then
+    echo "[!] Log file belum ada"
+    return
+  fi
+
+  if [ ! -w "$storage_path" ]; then
+    echo "[!] Storage tidak writable"
+    return
+  fi
+
+  cp "$LOG_SRC" "$storage_path/" && echo "[✔] Log berhasil disimpan"
 }
 
 # =========================
@@ -562,15 +845,23 @@ cmd_usb_detect() {
 }
 
 cmd_usb_select() {
+
   echo "[~] Select USB:"
   lsblk -o NAME,SIZE,MOUNTPOINT | grep "/media\|/run/media"
 
   read -p "Paste mount path USB: " input
 
-  if [ -d "$input" ]; then
-    USB_PATH="$input"
-    USB_SELECTED=1
-    echo "[✔] USB selected: $USB_PATH"
+  # basic normalize
+  input="${input%/}"
+
+  if [[ "$input" == /media/* || "$input" == /run/media/* ]]; then
+    if [ -d "$input" ]; then
+      USB_PATH="$input"
+      USB_SELECTED=1
+      echo "[✔] USB selected: $USB_PATH"
+    else
+      echo "[!] Path tidak ada"
+    fi
   else
     echo "[!] Invalid USB path"
     USB_SELECTED=0
@@ -596,6 +887,7 @@ cmd_usb_read() {
 }
 
 cmd_usb_delete() {
+  shopt -s huponexit
   if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
     echo "[!] No USB selected"
   else
@@ -603,10 +895,12 @@ cmd_usb_delete() {
     read -p "Type YES to confirm: " confirm
 
     if [ "$confirm" = "YES" ]; then
-      if [ -z "$USB_PATH" ] || [ "$USB_PATH" = "/" ]; then
-        echo "[!] Unsafe path"
-        return
+      if find "$USB_PATH" -mindepth 1 -print -quit | grep -q .; then
+        echo "[!] WARNING: Some files still exist"
+      else
+        echo "[✔] VERIFIED: USB is empty"
       fi
+
       if [[ "$USB_PATH" != /media/* && "$USB_PATH" != /run/media/* ]]; then
         echo "[!] Path bukan USB mount valid"
         return
@@ -615,7 +909,7 @@ cmd_usb_delete() {
         echo "[!] Path USB tidak valid"
         return
       fi
-      rm -rf "$USB_PATH"/*
+      find "$USB_PATH" -mindepth 1 -delete
       sync
       echo "[✔] Deleted successfully"
 
@@ -637,59 +931,94 @@ cmd_usb_delete() {
 cmd_ai_webcam_all() {
   init_storage
   echo "[~] AI Webcam All"
-  
+
+  mkdir -p "$storage_path/captures"
+
+  if [ ! -x "$PYTHON" ]; then
+    echo "[!] Python env tidak siap"
+    return
+  fi
+
   if [ ! -f "$HOME/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
-  
-  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" all
-  CURRENT_PID=$!
 
-  wait $CURRENT_PID
-  CURRENT_PID=0
+  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" all
+
   log_save "AI Webcam All"
 }
 
 cmd_ai_webcam_person() {
   init_storage
   echo "[~] AI Webcam Person"
-  
+
+  mkdir -p "$storage_path/captures"
+
+  if [ ! -x "$PYTHON" ]; then
+    echo "[!] Python env tidak siap"
+    return
+  fi
+
   if [ ! -f "$HOME/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
-  
-  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" person
-  CURRENT_PID=$!
 
-  wait $CURRENT_PID
-  CURRENT_PID=0
+  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" person
+
   log_save "AI Webcam Person"
 }
 
 cmd_ai_rtsp() {
   init_storage
   read -p "RTSP URL: " rtsp
-  
+
+  mkdir -p "$storage_path/captures"
+
+  if [ -z "$rtsp" ] || [[ ! "$rtsp" =~ ^rtsp:// ]]; then
+    echo "[!] RTSP tidak valid"
+    return
+  fi
+
+  if [ ! -x "$PYTHON" ]; then
+    echo "[!] Python env tidak siap"
+    return
+  fi
+
   if [ ! -f "$HOME/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
-  
+
   safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" "$rtsp" "$storage_path/captures" all
+
   log_save "AI CCTV RTSP"
 }
 
 cmd_ai_image() {
   init_storage
   read -p "Image path: " img
+
+  mkdir -p "$storage_path/captures"
+
+  if [ ! -f "$img" ]; then
+    echo "[!] File tidak ditemukan"
+    return
+  fi
+
+  if [ ! -x "$PYTHON" ]; then
+    echo "[!] Python env tidak siap"
+    return
+  fi
+
   if [ ! -f "$HOME/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
-  
+
   safe_ai 120 "$PYTHON" "$HOME/ai_detect.py" "$img" "$storage_path/captures" all
+
   log_save "AI Image Detect"
 }
 
@@ -697,33 +1026,44 @@ cmd_ai_video() {
   init_storage
   read -p "Video path: " vid
 
+  mkdir -p "$storage_path/captures"
+
   if [ ! -f "$vid" ]; then
     echo "[!] File tidak ditemukan"
     return
   fi
-  
+
+  if [ ! -x "$PYTHON" ]; then
+    echo "[!] Python env tidak siap"
+    return
+  fi
+
   if [ ! -f "$HOME/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
   safe_ai 120 "$PYTHON" "$HOME/ai_detect.py" "$vid" "$storage_path/captures" all
-  CURRENT_PID=$!
 
-  wait $CURRENT_PID
-  CURRENT_PID=0
   log_save "AI Video Detect"
 }
 
 cmd_ai_train() {
   init_storage
   echo "[~] Mencari data.yaml..."
-  
+
+  mkdir -p "$storage_path/captures"
+
+  if [ ! -x "$PYTHON" ]; then
+    echo "[!] Python env tidak siap"
+    return
+  fi
+
   if [ ! -f "$HOME/ai_train.py" ]; then
     echo "[!] ai_train.py tidak ditemukan"
     return
   fi
-  
+
   if ! command -v dialog >/dev/null 2>&1; then
     echo "[!] dialog belum terinstall"
     return
@@ -740,11 +1080,16 @@ cmd_ai_train() {
   for i in "${!files[@]}"; do
     options+=($i "${files[$i]}")
   done
-  
+
   choice=$(dialog --menu "Pilih data.yaml:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
 
-  if [ -z "$choice" ]; then
-    echo "[x] Dibatalkan"
+  if [ -z "$choice" ] || ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+    echo "[!] Invalid selection"
+    return
+  fi
+
+  if [ -z "${files[$choice]}" ]; then
+    echo "[!] Data tidak valid"
     return
   fi
 
@@ -759,51 +1104,54 @@ cmd_ai_train() {
   fi
 
   safe_ai 60 "$PYTHON" "$HOME/ai_train.py" "$data"
-  CURRENT_PID=$!
 
-  wait $CURRENT_PID
-  CURRENT_PID=0
   log_save "Custom AI Training"
 }
 
 cmd_ai_run() {
   init_storage
   echo "[~] Pilih model folder..."
-  
-   if [ ! -f "$HOME/ai_detect.py" ]; then
+
+  mkdir -p "$storage_path/captures"
+
+  if [ ! -x "$PYTHON" ]; then
+    echo "[!] Python env tidak siap"
+    return
+  fi
+
+  if [ ! -f "$HOME/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
-  
+
   if ! command -v dialog >/dev/null 2>&1; then
     echo "[!] dialog belum terinstall"
     return
   fi
 
-  mapfile -t dirs < <(find "$HOME" -maxdepth 5 -type d -path "*/runs/*")
+  mapfile -t models < <(find "$HOME" -maxdepth 4 -type f -name "best.pt")
 
-  if [ ${#dirs[@]} -eq 0 ]; then
+  if [ ${#models[@]} -eq 0 ]; then
     echo "[!] Tidak ada model"
     return
   fi
 
   options=()
-  for i in "${!dirs[@]}"; do
-    options+=($i "${dirs[$i]}")
+  for i in "${!models[@]}"; do
+    options+=($i "${models[$i]}")
   done
-  
-  choice=$(dialog --menu "Pilih folder:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
 
-  if [ -z "$choice" ]; then
-    echo "[x] Dibatalkan"
+  choice=$(dialog --menu "Pilih model:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
+
+  if [ -z "$choice" ] || ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+    echo "[!] Invalid selection"
     return
   fi
 
-  selected="${dirs[$choice]}"
-  model=$(find "$selected" -name "best.pt" | head -n 1)
+  model="${models[$choice]}"
 
   if [ ! -f "$model" ]; then
-    echo "[!] Model tidak ditemukan"
+    echo "[!] Model tidak valid"
     return
   fi
 
@@ -815,9 +1163,14 @@ cmd_ai_run() {
     src=0
   else
     read -p "RTSP URL: " src
+    if [[ -z "$src" || ! "$src" =~ ^rtsp:// ]]; then
+      echo "[!] RTSP tidak valid"
+      return
+    fi
   fi
 
   safe_ai 60 "$PYTHON" "$HOME/ai_detect.py" "$src" "$storage_path/captures" all "$model"
+
   log_save "Custom AI Run"
 }
 
@@ -866,26 +1219,33 @@ for pkg in nmap dialog figlet; do
   if ! command -v "$pkg" >/dev/null 2>&1; then
     echo "[~] Installing $pkg..."
 
-    sudo apt install -y "$pkg" || {
-      echo "[!] Gagal install $pkg"
-      exit 1
-    }
+    safe_run 15 sudo apt update
 
+    safe_run 60 sudo apt install -y "$pkg"
+
+    if ! command -v "$pkg" >/dev/null 2>&1; then
+      echo "[!] Gagal install $pkg (skip)"
+    else
+      echo "[✔] $pkg installed"
+    fi
   fi
 done
 
 while true; do
-  
+
+  # update watchdog heartbeat
+  echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+  # global recovery handler
   if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-    RETURN_TO_MAIN=0
-    INTERRUPTED=0
-    RECOVERY_MODE=0
+    reset_state
     clear
+    continue
   fi
 
   if [ "$RECOVERY_MODE" -eq 1 ]; then
-    echo -e "${GREEN}[AUTO-RECOVERY] Kembali ke MENU UTAMA...${NC}"
-    RECOVERY_MODE=0
+    reset_state
+    clear
     continue
   fi
 
@@ -918,7 +1278,7 @@ while true; do
   echo "6. Exit"
   echo -e "${CYAN}=========================${NC}"
 
-  read -p "Pilih menu: " main || continue
+  IFS= read -r "Pilih menu: " main || continue
 
   case $main in
 
@@ -927,20 +1287,12 @@ while true; do
     # =====================
     1)
       while true; do
-        
-        echo "$(date +%s)" > "$WATCHDOG_FILE"
-        
-        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-          RETURN_TO_MAIN=0
-          INTERRUPTED=0
-          RECOVERY_MODE=0
-          clear
-        fi
 
-        if [ "$INTERRUPTED" -eq 1 ]; then
-          INTERRUPTED=0
-    	  break
-  	fi
+        echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+	fi
 
         echo -e "${CYAN}=========================${NC}"
         echo -e "${GREEN}        IP TOOLS${NC}"
@@ -958,7 +1310,7 @@ while true; do
         echo "11. Kembali"
         echo -e "${CYAN}=========================${NC}"
 
-        read -p "Pilih menu: " ipmenu || continue
+        IFS= read -r -p "Pilih menu: " ipmenu || continue
 
         case $ipmenu in
 
@@ -1023,17 +1375,11 @@ while true; do
     2)
       while true; do
       
+        echo "$(date +%s)" > "$WATCHDOG_FILE"
+      
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-          RETURN_TO_MAIN=0
-          INTERRUPTED=0
-          RECOVERY_MODE=0
-          clear
-        fi
-
-        if [ "$INTERRUPTED" -eq 1 ]; then
-    	  INTERRUPTED=0
-    	  break
-  	fi
+          break
+	fi
 
         echo -e "${CYAN}=========================${NC}"
         echo -e "${GREEN}        TCP TOOLS${NC}"
@@ -1047,7 +1393,7 @@ while true; do
         echo "7. Kembali"
         echo -e "${CYAN}=========================${NC}"
 
-        read -p "Pilih menu: " tcpmenu || continue
+        IFS= read -r -p "Pilih menu: " tcpmenu || continue
 
         case $tcpmenu in
 
@@ -1090,17 +1436,11 @@ while true; do
     3)
       while true; do
       
+        echo "$(date +%s)" > "$WATCHDOG_FILE"
+      
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-          RETURN_TO_MAIN=0
-          INTERRUPTED=0
-          RECOVERY_MODE=0
-          clear
-  	fi
-
-  	if [ "$INTERRUPTED" -eq 1 ]; then
-    	  INTERRUPTED=0
-    	  break
-  	fi
+          break
+	fi
 
         echo -e "${CYAN}=========================${NC}"
         echo -e "${YELLOW}     STORAGE MODE${NC}"
@@ -1113,7 +1453,7 @@ while true; do
         echo "6. Kembali"
         echo -e "${CYAN}=========================${NC}"
 
-        read -p "Pilih menu: " smode || continue
+        IFS= read -r -p "Pilih menu: " smode || continue
 
         case $smode in
 
@@ -1141,12 +1481,11 @@ while true; do
             
             while true; do
             
+              echo "$(date +%s)" > "$WATCHDOG_FILE"
+            
               if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-                RETURN_TO_MAIN=0
-                INTERRUPTED=0
-                RECOVERY_MODE=0
-                clear
-              fi
+  	        break
+	      fi
 
               echo -e "${CYAN}=========================${NC}"
               echo -e "${GREEN}      USB TOOLS${NC}"
@@ -1159,7 +1498,7 @@ while true; do
               echo "6. Kembali"
               echo -e "${CYAN}=========================${NC}"
 
-              read -p "Pilih menu: " usbmenu || continue
+              IFS= read -r -p "Pilih menu: " usbmenu || continue
 
               case $usbmenu in
 
@@ -1207,18 +1546,12 @@ while true; do
     4)
       while true; do
       
+        echo "$(date +%s)" > "$WATCHDOG_FILE"
+      
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-    	  RETURN_TO_MAIN=0
-    	  INTERRUPTED=0
-    	  RECOVERY_MODE=0
-    	  clear
-  	fi
-
-  	if [ "$INTERRUPTED" -eq 1 ]; then
-    	  INTERRUPTED=0
-    	  break
-  	fi
-
+  	  break
+	fi
+	
         echo -e "${CYAN}=========================${NC}"
         echo -e "${GREEN}        AI TOOLS${NC}"
         echo -e "${CYAN}=========================${NC}"
@@ -1232,7 +1565,7 @@ while true; do
 	echo "8. Kembali"
         echo -e "${CYAN}=========================${NC}"
 
-        read -p "Pilih menu: " aimenu || continue
+        IFS= read -r -p "Pilih menu: " aimenu || continue
 
         case $aimenu in
 
@@ -1253,122 +1586,134 @@ while true; do
       done
       ;;
     
-    # ================
+    # =====================
     # CUSTOM SCENARIO
-    # ================
+    # =====================
     5)
-      echo -e "${CYAN}=========================${NC}"
-      echo -e "${CYAN}     CUSTOM SCENARIO${NC}"
-      echo -e "${CYAN}=========================${NC}"
+      while true; do
+      
+        echo "$(date +%s)" > "$WATCHDOG_FILE"
+      
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+        fi
+	
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${CYAN}     CUSTOM SCENARIO${NC}"
+      	echo -e "${CYAN}=========================${NC}"
 
-      echo "1. Jalankan Scenario"
-      echo "2. Buat Scenario Baru"
-      echo "3. Kembali"
+      	echo "1. Jalankan Scenario"
+      	echo "2. Buat Scenario Baru"
+      	echo "3. Kembali"
 
-      echo -e "${CYAN}=========================${NC}"
+      	echo -e "${CYAN}=========================${NC}"
 
-      read -p "Pilih menu: " sub || continue
+      	IFS= read -r -p "Pilih menu: " sub || continue
 
-      case $sub in
-        1)
-  	  shopt -s nullglob
-          files=("$SCENARIO_DIR"/*.sh)
-          shopt -u nullglob
+      	case $sub in
+          1)
+  	    shopt -s nullglob
+            files=("$SCENARIO_DIR"/*.sh)
+            shopt -u nullglob
 
-  	  if [ ${#files[@]} -eq 0 ]; then
-            echo "[!] Tidak ada scenario"
-            continue
-          fi
+  	    if [ ${#files[@]} -eq 0 ]; then
+              echo "[!] Tidak ada scenario"
+              continue
+            fi
           
-      	    echo -e "${CYAN}=========================${NC}"
-    	    echo -e "${CYAN}   DAFTAR SCENARIO${NC}"
-    	    echo -e "${CYAN}=========================${NC}"
+      	      echo -e "${CYAN}=========================${NC}"
+    	      echo -e "${CYAN}   DAFTAR SCENARIO${NC}"
+    	      echo -e "${CYAN}=========================${NC}"
 
-    	    for i in "${!files[@]}"; do
-      	      echo "$i. $(basename "${files[$i]}")"
-    	    done
+    	      for i in "${!files[@]}"; do
+      	        echo "$i. $(basename "${files[$i]}")"
+    	      done
 
-    	    echo -e "${CYAN}=========================${NC}"
+    	      echo -e "${CYAN}=========================${NC}"
 
-    	    read -p "Pilih scenario: " pilih
+    	      read -p "Pilih scenario: " pilih
 
-   	    if [ -n "${files[$pilih]}" ]; then
-      	      echo "[~] Menjalankan scenario..."
+   	      if [ -n "${files[$pilih]}" ]; then
+      	        echo "[~] Menjalankan scenario..."
 
-     	      while IFS= read -r cmd || [ -n "$cmd" ]; do
-        	[ -z "$cmd" ] && continue
+     	        while IFS= read -r cmd || [ -n "$cmd" ]; do
+        	  [ -z "$cmd" ] && continue
 
-	        case "$cmd" in
+	          case "$cmd" in
 
-        	  cmd_lihat_ip) cmd_lihat_ip ;;
-	          cmd_scan_jaringan) cmd_scan_jaringan ;;
-	          cmd_ping_ip) cmd_ping_ip ;;
-         	  cmd_set_ip_manual) cmd_set_ip_manual ;;
-	          cmd_routing) cmd_routing ;;
-	          cmd_dns_check) cmd_dns_check ;;
-	          cmd_internet_check) cmd_internet_check ;;
-       	          cmd_scan_ssh) cmd_scan_ssh ;;
-                  cmd_ssh_connect) cmd_ssh_connect ;;
-	          cmd_reset_ip) cmd_reset_ip ;;
+        	    cmd_lihat_ip) cmd_lihat_ip ;;
+	            cmd_scan_jaringan) cmd_scan_jaringan ;;
+	            cmd_ping_ip) cmd_ping_ip ;;
+         	    cmd_set_ip_manual) cmd_set_ip_manual ;;
+	            cmd_routing) cmd_routing ;;
+	            cmd_dns_check) cmd_dns_check ;;
+	            cmd_internet_check) cmd_internet_check ;;
+       	            cmd_scan_ssh) cmd_scan_ssh ;;
+                    cmd_ssh_connect) cmd_ssh_connect ;;
+	            cmd_reset_ip) cmd_reset_ip ;;
 
-	          cmd_tcp_scan_port) cmd_tcp_scan_port ;;
-	          cmd_tcp_service_detection) cmd_tcp_service_detection ;;
-	          cmd_tcp_range_scan) cmd_tcp_range_scan ;;
-	          cmd_tcp_specific_port) cmd_tcp_specific_port ;;
-	          cmd_tcp_local_ports) cmd_tcp_local_ports ;;
-	          cmd_tcp_banner_grab) cmd_tcp_banner_grab ;;
+	            cmd_tcp_scan_port) cmd_tcp_scan_port ;;
+	            cmd_tcp_service_detection) cmd_tcp_service_detection ;;
+	            cmd_tcp_range_scan) cmd_tcp_range_scan ;;
+	            cmd_tcp_specific_port) cmd_tcp_specific_port ;;
+	            cmd_tcp_local_ports) cmd_tcp_local_ports ;;
+	            cmd_tcp_banner_grab) cmd_tcp_banner_grab ;;
 
-	          cmd_ai_webcam_all) cmd_ai_webcam_all ;;
-	          cmd_ai_webcam_person) cmd_ai_webcam_person ;;
-	          cmd_ai_rtsp) cmd_ai_rtsp ;;
-	          cmd_ai_image) cmd_ai_image ;;
-	          cmd_ai_video) cmd_ai_video ;;
-	          cmd_ai_train) cmd_ai_train ;;
-	          cmd_ai_run) cmd_ai_run ;;
+	            cmd_ai_webcam_all) cmd_ai_webcam_all ;;
+	            cmd_ai_webcam_person) cmd_ai_webcam_person ;;
+	            cmd_ai_rtsp) cmd_ai_rtsp ;;
+	            cmd_ai_image) cmd_ai_image ;;
+	            cmd_ai_video) cmd_ai_video ;;
+	            cmd_ai_train) cmd_ai_train ;;
+	            cmd_ai_run) cmd_ai_run ;;
 
-	          cmd_storage_local) cmd_storage_local ;;
-	          cmd_storage_usb) cmd_storage_usb ;;
-	          cmd_storage_install) cmd_storage_install ;;
- 	          cmd_storage_save_log) cmd_storage_save_log ;;
+	            cmd_storage_local) cmd_storage_local ;;
+	            cmd_storage_usb) cmd_storage_usb ;;
+	            cmd_storage_install) cmd_storage_install ;;
+ 	            cmd_storage_save_log) cmd_storage_save_log ;;
 
-	          cmd_usb_detect) cmd_usb_detect ;;
-	          cmd_usb_select) cmd_usb_select ;;
-	          cmd_usb_workspace) cmd_usb_workspace ;;
-	          cmd_usb_read) cmd_usb_read ;;
-	          cmd_usb_delete) cmd_usb_delete ;;
+	            cmd_usb_detect) cmd_usb_detect ;;
+	            cmd_usb_select) cmd_usb_select ;;
+	            cmd_usb_workspace) cmd_usb_workspace ;;
+	            cmd_usb_read) cmd_usb_read ;;
+	            cmd_usb_delete) cmd_usb_delete ;;
 
-	          *)
-	            echo "[!] Unknown command: $cmd"
-	            ;;
-	        esac
+	            *)
+	              echo "[!] Unknown command: $cmd"
+	              ;;
+	          esac
 
-	      done < "${files[$pilih]}"
+	        done < "${files[$pilih]}"
 
-	      echo "[✔] Selesai"
-	      log_save "Run Scenario $(basename "${files[$pilih]}")"
+	        echo "[✔] Selesai"
+	        log_save "Run Scenario $(basename "${files[$pilih]}")"
 
-	    else
-	      echo "[!] Pilihan tidak valid"
-	    fi
-	;;
-
-        2)
-          if [ -f ~/scenario_builder.sh ]; then
-    	    bash ~/scenario_builder.sh
-          else
-    	    echo "[!] scenario_builder.sh tidak ditemukan"
-          fi
+	      else
+	        echo "[!] Pilihan tidak valid"
+	      fi
 	  ;;
 
-	 3)
-   	   ;;
-       esac
-     ;;
+          2)
+            if [ -f ~/scenario_builder.sh ]; then
+    	      bash ~/scenario_builder.sh
+            else
+    	      echo "[!] scenario_builder.sh tidak ditemukan"
+            fi
+	    ;;
+
+	   3)
+             break
+             ;;
+             
     # =====================
     # 🚪 EXIT
     # =====================
     6)
       echo -e "${RED}Exiting NETTOOLS...${NC}"
+
+      pkill -P $$ 2>/dev/null
+      kill -9 "$WATCHDOG_PID" 2>/dev/null
+
       sleep 1
       clear
       break

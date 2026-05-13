@@ -24,72 +24,67 @@ LOCK_FILE="$HOME/.nettool_installed"
 trap "echo -e '\n${YELLOW}[!] Installer interrupted safely${NC}'; exit 1" SIGINT
 
 # =========================
+# 📊 PROGRESS BAR
+# =========================
+
+progress_bar() {
+
+  local current=$1
+  local total=$2
+  local label="$3"
+
+  local width=28
+
+  local percent=$(( current * 100 / total ))
+  local filled=$(( width * current / total ))
+  local empty=$(( width - filled ))
+
+  local fill=$(printf "%${filled}s")
+  local space=$(printf "%${empty}s")
+
+  printf "\r${CYAN}%-24s${NC} [${GREEN}%s${NC}%s] ${YELLOW}%3d%%${NC}" \
+    "$label" \
+    "${fill// /█}" \
+    "${space// /░}" \
+    "$percent"
+
+  if [ "$current" -eq "$total" ]; then
+    echo ""
+  fi
+}
+
+# =========================
 # 🎬 LOADING
 # =========================
 
 loading() {
+
   local text="$1"
-  local total=20
 
-  echo -e "${CYAN}${text}${NC}"
-
-  echo -ne "["
-  for ((i=0; i<total; i++)); do
-    echo -ne "█"
-    sleep 0.03
-  done
-  echo -e "] done"
-}
-
-spinner() {
-  local pid=$1
-  local text="$2"
-
-  local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-
-  echo -ne "${CYAN}${text}${NC} "
-
-  while kill -0 $pid 2>/dev/null; do
-    for i in $(seq 0 8); do
-      echo -ne "\r${CYAN}${text} ${spin:$i:1}${NC}"
-      sleep 0.1
-    done
-  done
-
-  echo -e "\r${GREEN}${text} ✔${NC}"
+  printf "\n${CYAN}%s...${NC}\n" "$text"
 }
 
 apt_install() {
+
   local pkgs="$1"
 
-  echo -e "${CYAN}[~] Installing: $pkgs${NC}"
+  loading "[~] Installing packages"
 
-  (
-    sudo apt update -y >/dev/null 2>&1
-    sudo apt install -y $pkgs >/dev/null 2>&1
-  ) &
+  progress_bar 1 4 "Updating apt"
 
-  pid=$!
+  sudo apt update -y >/dev/null 2>&1 || return 1
 
-  spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  progress_bar 2 4 "Installing packages"
 
-  i=0
-  while kill -0 $pid 2>/dev/null; do
-    i=$(( (i+1) % 10 ))
-    echo -ne "\r${CYAN}[~] Installing ${spin:$i:1} ${NC}"
-    sleep 0.1
-  done
+  sudo apt install -y $pkgs >/dev/null 2>&1 || return 1
 
-  wait $pid
-  exit_code=$?
+  progress_bar 3 4 "Finishing"
+  
+  sleep 0.5
 
-  if [ $exit_code -eq 0 ]; then
-    echo -e "\r${GREEN}[✔] Installation complete        ${NC}"
-    return 0
-  else
-    echo -e "\r${RED}[✘] Installation failed         ${NC}"
-    return 1
-  fi
+  progress_bar 4 4 "Complete"
+
+  return 0
 }
 
 # =========================
@@ -136,28 +131,39 @@ fi
 # =========================
 loading "[~] Setting AI environment"
 
-python3 -m venv ~/nettool-env >/dev/null 2>&1
+progress_bar 1 5 "Creating venv"
 
-if python3 -m venv ~/nettool-env >/dev/null 2>&1; then
+python3 -m venv ~/nettool-env >/dev/null 2>&1 || {
+  fail "Failed create venv"
+  exit 1
+}
 
-  "$HOME/nettool-env/bin/pip" install --upgrade pip --quiet
+progress_bar 2 5 "Updating pip"
 
-  if "$HOME/nettool-env/bin/pip" install ultralytics opencv-python --no-cache-dir --quiet; then
-    "$HOME/nettool-env/bin/pip" install torch torchvision torchaudio \
-      --index-url https://download.pytorch.org/whl/cpu --quiet
+"$HOME/nettool-env/bin/pip" install --upgrade pip --quiet
 
-    if "$HOME/nettool-env/bin/python" -c "import ultralytics, cv2" >/dev/null 2>&1; then
-      ok "AI environment ready"
-    else
-      fail "Import check failed"
-    fi
+progress_bar 3 5 "Installing AI"
 
-  else
-    fail "AI setup failed"
-  fi
+"$HOME/nettool-env/bin/pip" install ultralytics opencv-python \
+  --no-cache-dir --quiet || {
+  fail "AI setup failed"
+  exit 1
+}
 
+progress_bar 4 5 "Installing Torch"
+
+"$HOME/nettool-env/bin/pip" install torch torchvision torchaudio \
+  --index-url https://download.pytorch.org/whl/cpu --quiet || {
+  fail "Torch install failed"
+  exit 1
+}
+
+progress_bar 5 5 "Verifying"
+
+if "$HOME/nettool-env/bin/python" -c "import ultralytics, cv2" >/dev/null 2>&1; then
+  ok "AI environment ready"
 else
-  fail "Failed to create venv"
+  fail "Import check failed"
   exit 1
 fi
 
@@ -176,11 +182,18 @@ ok "Folders ready"
 # =========================
 loading "[~] Downloading core files"
 
+progress_bar 1 4 "Downloading nettool"
 wget -q "$REPO_URL/nettool" -O /tmp/nettool
+sleep 0.2
+progress_bar 2 4 "Downloading ai_detect"
 wget -q "$REPO_URL/ai_detect.py" -O ~/ai_detect.py
+sleep 0.2
+progress_bar 3 4 "Downloading ai_train"
 wget -q "$REPO_URL/ai_train.py" -O ~/ai_train.py
+sleep 0.2
+progress_bar 4 4 "Downloading scenario"
 wget -q "$REPO_URL/scenario_builder.sh" -O ~/scenario_builder.sh
-
+sleep 0.2
 if [ ! -f /tmp/nettool ] || [ ! -f ~/ai_detect.py ] || [ ! -f ~/ai_train.py ]; then
   fail "Download failed"
   exit 1
