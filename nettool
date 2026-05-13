@@ -12,6 +12,11 @@ NC='\033[0m'
 
 set +e
 set -o pipefail
+check_fail() {
+  if [ $? -ne 0 ]; then
+    echo "[!] ERROR: $1"
+  fi
+}
 
 CURRENT_PID=0
 CURRENT_CHILD=""
@@ -19,24 +24,86 @@ RECOVERY_MODE=0
 INTERRUPTED=0
 RETURN_TO_MAIN=0
 CRASH_FLAG=0
+SCENARIO_MODE=0
+SCENARIO_DEPTH=0
 
-kill_process() {
+safe_kill() {
   local pid="$1"
 
   if [ -z "$pid" ]; then
     return
   fi
 
-  # coba kill normal dulu
-  kill "$pid" 2>/dev/null
+  # mark dulu biar sistem lain stop intervensi
+  PROCESS_MAIN=""
+  PROCESS_CHILD=""
 
-  # tunggu dikit
+  kill "$pid" 2>/dev/null
   sleep 0.5
 
-  # kalau masih hidup, baru paksa
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -9 "$pid" 2>/dev/null
+  kill -TERM "$pid" 2>/dev/null
+  sleep 1
+
+  kill -KILL "$pid" 2>/dev/null
+
+  wait "$pid" 2>/dev/null
+}
+
+kill_process() {
+  local pid="$1"
+
+  if [ -z "$pid" ]; then
+    return 0
   fi
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  safe_kill "$pid"
+}
+
+register_child() {
+  PROCESS_CHILD="$1"
+}
+
+# =========================
+# 🧠 PID SAFETY LAYER 
+# =========================
+
+is_alive() {
+  [ -n "$1" ] && kill -0 "$1" 2>/dev/null
+}
+
+cleanup_child() {
+  if [ -n "$CURRENT_CHILD" ]; then
+    if ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+      echo "[CLEANUP] stale CURRENT_CHILD removed ($CURRENT_CHILD)"
+      CURRENT_CHILD=""
+    fi
+  fi
+}
+
+validate_child() {
+  if [ -n "$CURRENT_CHILD" ] && ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+    echo "[CLEANUP] stale CURRENT_CHILD removed ($CURRENT_CHILD)"
+    CURRENT_CHILD=""
+  fi
+}
+
+set_child() {
+  local pid="$1"
+
+  sleep 0.1
+
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    echo "[WARN] invalid CHILD PID"
+    CURRENT_CHILD=""
+    return 1
+  fi
+
+  CURRENT_CHILD="$pid"
+  return 0
 }
 
 # =========================
@@ -47,37 +114,43 @@ safe_ai() {
   local timeout="$1"
   shift
 
-  if [ "$INTERRUPTED" -eq 1 ]; then
-    echo "[!] SAFE AI: dibatalkan (CTRL+C)"
-    INTERRUPTED=0
+  setsid "$@" &
+  local pid=$!
+
+  set_child "$pid"
+
+  if [ -z "$CURRENT_CHILD" ]; then
+    echo "[!] SAFE AI: gagal spawn process"
     return 1
   fi
 
-  set +e
+  local start_time=$(date +%s)
 
-  # jalankan dalam process group sendiri
-  if [ "$timeout" -eq 0 ]; then
-    setsid "$@" &
-  else
-    timeout "$timeout" setsid "$@" &
-  fi
+  while kill -0 "$CURRENT_CHILD" 2>/dev/null; do
+    write_heartbeat "AI_RUN"
+    sleep 2
 
-  CURRENT_PID=$!
+    if [ "$timeout" -gt 0 ]; then
+      now=$(date +%s)
+      diff=$((now - start_time))
 
-  # tunggu process selesai (tanpa polling manual)
-  wait "$CURRENT_PID"
+      if [ "$diff" -ge "$timeout" ]; then
+        echo "[!] SAFE AI: TIMEOUT ($timeout detik)"
+
+        kill_process "$CURRENT_CHILD"
+        wait "$CURRENT_CHILD" 2>/dev/null
+        CURRENT_CHILD=""
+
+        return 124
+      fi
+    fi
+  done
+
+  wait "$CURRENT_CHILD" 2>/dev/null
   local status=$?
 
-  CURRENT_PID=0
-
-  set -e
-
-  # interpretasi status
-  if [ $status -eq 124 ]; then
-    echo "[!] SAFE AI: timeout ($timeout detik)"
-  elif [ $status -ne 0 ]; then
-    echo "[!] SAFE AI: crash (code $status)"
-  fi
+  validate_child
+  CURRENT_CHILD=""
 
   return $status
 }
@@ -89,7 +162,6 @@ safe_menu() {
   set +e
   "$@"
   local status=$?
-  set -e
 
   if [ $status -ne 0 ]; then
     echo "[!] SAFE MENU: error di menu command"
@@ -106,8 +178,6 @@ safe_bg() {
 
   "$@" &
   local pid=$!
-
-  set -e
 
   CURRENT_CHILD="$pid"
 
@@ -137,7 +207,6 @@ INSTALLER_URL="$REPO_URL/install.sh"
 
 trap_ctrlc() {
 
-  # anti spam ctrl+c
   if [ "$RECOVERY_MODE" -eq 1 ]; then
     return
   fi
@@ -149,31 +218,13 @@ trap_ctrlc() {
   RECOVERY_MODE=1
   RETURN_TO_MAIN=1
 
-  # kill AI/main process
-  if [ "$CURRENT_PID" -ne 0 ] 2>/dev/null; then
-    kill_process "$CURRENT_PID"
-    wait "$CURRENT_PID" 2>/dev/null
-    CURRENT_PID=0
-  fi
+  kill_process "$CURRENT_CHILD"
+  kill_process "$CURRENT_PID"
 
-  # kill background child
-  if [ -n "$CURRENT_CHILD" ]; then
-    kill -TERM -"$CURRENT_CHILD" 2>/dev/null
-    sleep 0.3
-    kill -TERM -"$CURRENT_CHILD" 2>/dev/null
-    sleep 0.3
+  CURRENT_CHILD=""
+  CURRENT_PID=0
 
-    if kill -0 "$CURRENT_CHILD" 2>/dev/null; then
-        kill -KILL -"$CURRENT_CHILD" 2>/dev/null
-    fi
-    wait "$CURRENT_CHILD" 2>/dev/null
-    CURRENT_CHILD=""
-  fi
-
-  # kill semua child process script
-  pkill -TERM -P $$ 2>/dev/null
-
-  sleep 0.2
+  validate_child
 }
 
 trap trap_ctrlc SIGINT
@@ -184,12 +235,11 @@ reset_state() {
   RECOVERY_MODE=0
   CRASH_FLAG=0
 
-  # kill sisa child process kalau ada
   if [ -n "$CURRENT_CHILD" ]; then
-    kill_process "$CURRENT_CHILD"
-    CURRENT_CHILD=""
+    kill_process "$CURRENT_CHILD" 2>/dev/null
   fi
 
+  CURRENT_CHILD=""
   CURRENT_PID=0
 }
 
@@ -198,24 +248,29 @@ reset_state() {
 # =========================
 
 safe_run() {
+  write_heartbeat "AI_RUN"
+  validate_child
+
   local timeout_sec="$1"
   shift
   local cmd=("$@")
 
-  CURRENT_CHILD=""
-
-  # jalankan process dalam group sendiri
   setsid "${cmd[@]}" &
-  CURRENT_CHILD=$!
+  local pid=$!
+
+  set_child "$pid"
+
+  if [ -z "$CURRENT_CHILD" ]; then
+    echo "[!] SAFE RUN: gagal spawn"
+    return 1
+  fi
 
   local status=0
 
-  # timeout mode
   if [ "$timeout_sec" -gt 0 ]; then
 
     for ((i=0; i<timeout_sec; i++)); do
 
-      # kalau sudah mati → langsung keluar
       if ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
         wait "$CURRENT_CHILD" 2>/dev/null
         status=$?
@@ -225,14 +280,8 @@ safe_run() {
 
       sleep 1
 
-      # kalau user interrupt
       if [ "$RECOVERY_MODE" -eq 1 ]; then
-        kill -TERM -"$CURRENT_CHILD" 2>/dev/null
-        sleep 0.3
-
-  	if kill -0 "$CURRENT_CHILD" 2>/dev/null; then
-    	    kill -KILL -"$CURRENT_CHILD" 2>/dev/null
-	fi
+        kill_process "$CURRENT_CHILD"
         wait "$CURRENT_CHILD" 2>/dev/null
         CURRENT_CHILD=""
         return 1
@@ -241,23 +290,18 @@ safe_run() {
 
     echo "[!] SAFE RUN: timeout (${timeout_sec}s)"
 
-    # kill entire process group
-    kill -9 -"$CURRENT_CHILD" 2>/dev/null
+    kill_process "$CURRENT_CHILD"
     wait "$CURRENT_CHILD" 2>/dev/null
-
     CURRENT_CHILD=""
+
     return 124
   fi
 
-  # NO TIMEOUT MODE
-  wait "$CURRENT_CHILD"
+  wait "$CURRENT_CHILD" 2>/dev/null
   status=$?
 
+  validate_child
   CURRENT_CHILD=""
-
-  if [ $status -ne 0 ]; then
-    echo "[!] SAFE RUN: error (code $status)"
-  fi
 
   return $status
 }
@@ -266,74 +310,68 @@ safe_run() {
 # 🐶 WATCHDOG SYSTEM
 # =========================
 watchdog_loop() {
-  local recovery_lock=0
+  local WATCHDOG_TIMEOUT=120
+  local recovery_lock_file="/tmp/nettools_recovery.lock"
 
   while true; do
     sleep 2
 
-    WATCHDOG_TIMEOUT=10
+    cleanup_child
 
-    # kalau lagi recovery, skip penuh
-    if [ "$RECOVERY_MODE" -eq 1 ]; then
+    [ "$RECOVERY_MODE" -eq 1 ] && {
+      write_heartbeat "RECOVERY"
       continue
-    fi
+    }
 
-    # file harus ada
-    if [ ! -f "$WATCHDOG_FILE" ]; then
-      continue
-    fi
+    [ ! -f "$WATCHDOG_FILE" ] && continue
 
-    last=$(cat "$WATCHDOG_FILE" 2>/dev/null)
+    line=$(cat "$WATCHDOG_FILE" 2>/dev/null)
 
-    # validasi numeric
-    if ! [[ "$last" =~ ^[0-9]+$ ]]; then
-      continue
-    fi
+    last=$(echo "$line" | cut -d'|' -f1)
+    src=$(echo "$line" | cut -d'|' -f2)
+
+    # VALIDATION HARD
+    [[ ! "$last" =~ ^[0-9]+$ ]] && continue
 
     now=$(date +%s)
     diff=$((now - last))
 
-    # safety guard
-    if [ "$diff" -lt 0 ]; then
+    # IGNORE SHORT SPIKES
+    if [ "$diff" -lt 3 ]; then
       continue
     fi
 
     if [ "$diff" -ge "$WATCHDOG_TIMEOUT" ]; then
 
-      # anti double trigger
-      if [ "$recovery_lock" -eq 1 ]; then
+      # GLOBAL LOCK (ANTI DOUBLE RECOVERY)
+      if [ -f "$recovery_lock_file" ]; then
         continue
       fi
-      recovery_lock=1
 
-      echo ""
-      echo "[!] WATCHDOG: system freeze terdeteksi (${diff}s)"
+      touch "$recovery_lock_file"
 
-      # kill child process
-      if [ -n "$CURRENT_CHILD" ]; then
-        kill_process "$CURRENT_CHILD"
-        wait "$CURRENT_CHILD" 2>/dev/null
-        CURRENT_CHILD=""
-      fi
+      echo "[!] WATCHDOG: freeze detected (${diff}s from $src)"
 
-      # kill main process
-      if [ "$CURRENT_PID" -ne 0 ] 2>/dev/null; then
-        kill_process "$CURRENT_PID"
-        wait "$CURRENT_PID" 2>/dev/null
-        CURRENT_PID=0
-      fi
+      kill_process "$CURRENT_CHILD"
+      kill_process "$CURRENT_PID"
 
-      pkill -P $$ 2>/dev/null
+      CURRENT_CHILD=""
+      CURRENT_PID=0
 
       RETURN_TO_MAIN=1
+      RECOVERY_MODE=1
       INTERRUPTED=1
 
-      # write recovery heartbeat (beda marker)
-      echo "$(date +%s)" > "$WATCHDOG_FILE"
+      write_heartbeat "WATCHDOG_RECOVERY"
 
-      log_save "WATCHDOG TRIGGERED (freeze ${diff}s)"
+      log_save "WATCHDOG TRIGGERED ($src)"
+
+      # unlock after short cooldown
+      (
+        sleep 5
+        rm -f "$recovery_lock_file"
+      ) &
     fi
-
   done
 }
 
@@ -609,15 +647,18 @@ init_storage() {
 }
 
 log_save() {
-
   init_storage
 
-  if [ ! -d "$storage_path" ]; then
-    echo "[!] Storage path invalid"
+  if [ ! -w "$storage_path" ]; then
+    echo "[!] Storage not writable"
     return 1
   fi
 
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$storage_path/nettools_log.txt"
+  echo "[$(date '+%F %T')] $1" >> "$storage_path/nettools_log.txt" 2>/dev/null
+
+  if [ $? -ne 0 ]; then
+    echo "[!] Failed to write log"
+  fi
 }
 
 # =========================
@@ -887,41 +928,33 @@ cmd_usb_read() {
 }
 
 cmd_usb_delete() {
-  shopt -s huponexit
   if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
     echo "[!] No USB selected"
-  else
-    echo "[!] Deleting: $USB_PATH/*"
-    read -p "Type YES to confirm: " confirm
-
-    if [ "$confirm" = "YES" ]; then
-      if find "$USB_PATH" -mindepth 1 -print -quit | grep -q .; then
-        echo "[!] WARNING: Some files still exist"
-      else
-        echo "[✔] VERIFIED: USB is empty"
-      fi
-
-      if [[ "$USB_PATH" != /media/* && "$USB_PATH" != /run/media/* ]]; then
-        echo "[!] Path bukan USB mount valid"
-        return
-      fi
-      if [ ! -d "$USB_PATH" ]; then
-        echo "[!] Path USB tidak valid"
-        return
-      fi
-      find "$USB_PATH" -mindepth 1 -delete
-      sync
-      echo "[✔] Deleted successfully"
-
-      if [ "$(ls -A "$USB_PATH")" ]; then
-        echo "[!] WARNING: Some files still exist"
-      else
-        echo "[✔] VERIFIED: USB is empty"
-      fi
-    else
-      echo "[x] Cancelled"
-    fi
+    return
   fi
+
+  echo "[!] Deleting: $USB_PATH/*"
+  read -p "Type YES to confirm: " confirm
+
+  [ "$confirm" != "YES" ] && return
+
+  # HARD SAFETY CHECK
+  if [[ "$USB_PATH" != /media/* && "$USB_PATH" != /run/media/* ]]; then
+    echo "[!] BLOCKED: not a real USB mount"
+    return
+  fi
+
+  if [ ! -d "$USB_PATH" ]; then
+    echo "[!] Invalid path"
+    return
+  fi
+
+  # SAFE DELETE (FIXED)
+  find "$USB_PATH" -mindepth 1 -maxdepth 5 -exec rm -rf {} \;
+
+  sync
+
+  echo "[✔] Deleted safely"
 }
 
 # =========================
@@ -1138,12 +1171,18 @@ cmd_ai_run() {
 
   options=()
   for i in "${!models[@]}"; do
-    options+=($i "${models[$i]}")
+    options+=("$i" "${models[$i]}")
   done
 
   choice=$(dialog --menu "Pilih model:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
 
-  if [ -z "$choice" ] || ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+  # handle cancel
+  if [ -z "$choice" ]; then
+    echo "[!] Dibatalkan user"
+    return
+  fi
+
+  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
     echo "[!] Invalid selection"
     return
   fi
@@ -1175,66 +1214,139 @@ cmd_ai_run() {
 }
 
 # =========================
-# 📦 SCENARIO RUNNER
+# 🧠 SCENARIO EXECUTION ENGINE (FIXED)
 # =========================
 
-cmd_scenario_list() {
-  init_storage
-  echo "[~] Loading scenarios..."
+run_command() {
+  local cmd="$1"
 
-  mapfile -t scenarios < <(find "$HOME/nettools_scenarios" -type f)
+  [ -z "$cmd" ] && return 0
 
-  if [ ${#scenarios[@]} -eq 0 ]; then
-    echo "[!] No scenario found"
-    return
+  case "$cmd" in
+
+    # 🌐 IP
+    cmd_lihat_ip) cmd_lihat_ip ;;
+    cmd_scan_jaringan) cmd_scan_jaringan ;;
+    cmd_ping_ip) cmd_ping_ip ;;
+    cmd_set_ip_manual) cmd_set_ip_manual ;;
+    cmd_routing) cmd_routing ;;
+    cmd_dns_check) cmd_dns_check ;;
+    cmd_internet_check) cmd_internet_check ;;
+    cmd_scan_ssh) cmd_scan_ssh ;;
+    cmd_ssh_connect) cmd_ssh_connect ;;
+    cmd_reset_ip) cmd_reset_ip ;;
+
+    # 🔥 TCP
+    cmd_tcp_scan_port) cmd_tcp_scan_port ;;
+    cmd_tcp_service_detection) cmd_tcp_service_detection ;;
+    cmd_tcp_range_scan) cmd_tcp_range_scan ;;
+    cmd_tcp_specific_port) cmd_tcp_specific_port ;;
+    cmd_tcp_local_ports) cmd_tcp_local_ports ;;
+    cmd_tcp_banner_grab) cmd_tcp_banner_grab ;;
+
+    # 🤖 AI
+    cmd_ai_webcam_all) cmd_ai_webcam_all ;;
+    cmd_ai_webcam_person) cmd_ai_webcam_person ;;
+    cmd_ai_rtsp) cmd_ai_rtsp ;;
+    cmd_ai_image) cmd_ai_image ;;
+    cmd_ai_video) cmd_ai_video ;;
+    cmd_ai_train) cmd_ai_train ;;
+    cmd_ai_run) cmd_ai_run ;;
+
+    # 💾 STORAGE
+    cmd_storage_local) cmd_storage_local ;;
+    cmd_storage_usb) cmd_storage_usb ;;
+    cmd_storage_install) cmd_storage_install ;;
+    cmd_storage_save_log) cmd_storage_save_log ;;
+
+    # 🔌 USB
+    cmd_usb_detect) cmd_usb_detect ;;
+    cmd_usb_select) cmd_usb_select ;;
+    cmd_usb_workspace) cmd_usb_workspace ;;
+    cmd_usb_read) cmd_usb_read ;;
+    cmd_usb_delete) cmd_usb_delete ;;
+
+    *)
+      echo "[!] Unknown command: $cmd"
+      return 1
+      ;;
+  esac
+}
+
+# =========================
+# 📦 SCENARIO RUNNER (SAFE)
+# =========================
+
+run_scenario_file() {
+  local file="$1"
+
+  if [ ! -f "$file" ]; then
+    echo "[!] Scenario tidak ditemukan: $file"
+    return 1
   fi
 
-  echo ""
-  echo "Available Scenarios:"
-  for i in "${!scenarios[@]}"; do
-    name=$(basename "${scenarios[$i]}")
-    echo "$((i+1)). $name"
+  echo "[~] Running scenario: $(basename "$file")"
+
+  local line=0
+
+  while IFS= read -r cmd || [ -n "$cmd" ]; do
+    ((line++))
+
+    # skip kosong
+    [ -z "$cmd" ] && continue
+
+    # skip comment
+    [[ "$cmd" =~ ^# ]] && continue
+
+    # trim
+    cmd=$(echo "$cmd" | xargs)
+
+    [ -z "$cmd" ] && continue
+
+    echo "[SCENARIO:$line] $cmd"
+
+    run_command "$cmd"
+
+    # STOP kalau recovery aktif
+    if [ "$RECOVERY_MODE" -eq 1 ]; then
+      echo "[!] Recovery aktif → stop scenario"
+      break
+    fi
+
   done
 
-  read -p "Select scenario: " choice
+  echo "[✔] Scenario selesai"
+  return 0
+}
 
-  index=$((choice-1))
+# =========================
+# ⚙️ BACKGROUND INSTALL (SAFE)
+# =========================
 
-  if [ -z "${scenarios[$index]}" ]; then
-    echo "[!] Invalid selection"
-    return
-  fi
+background_install() {
+  for pkg in nmap dialog figlet; do
+    if ! command -v "$pkg" >/dev/null 2>&1; then
+      echo "[~] Installing $pkg (background)..."
 
-  echo "[~] Running scenario..."
-  bash "${scenarios[$index]}"
-
-  log_save "Run Scenario: $(basename "${scenarios[$index]}")"
+      (
+        sudo apt update -y >/dev/null 2>&1
+        sudo apt install -y "$pkg" >/dev/null 2>&1
+      ) &
+    fi
+  done
 }
 
 # =========================
 # 🔁 MAIN LOOP
 # =========================
 
-for pkg in nmap dialog figlet; do
-  if ! command -v "$pkg" >/dev/null 2>&1; then
-    echo "[~] Installing $pkg..."
-
-    safe_run 15 sudo apt update
-
-    safe_run 60 sudo apt install -y "$pkg"
-
-    if ! command -v "$pkg" >/dev/null 2>&1; then
-      echo "[!] Gagal install $pkg (skip)"
-    else
-      echo "[✔] $pkg installed"
-    fi
-  fi
-done
+cleanup_child
+background_install
 
 while true; do
 
   # update watchdog heartbeat
-  echo "$(date +%s)" > "$WATCHDOG_FILE"
+  write_heartbeat "MENU"
 
   # global recovery handler
   if [ "$RETURN_TO_MAIN" -eq 1 ]; then
@@ -1278,7 +1390,7 @@ while true; do
   echo "6. Exit"
   echo -e "${CYAN}=========================${NC}"
 
-  IFS= read -r "Pilih menu: " main || continue
+  IFS= read -r -p "Pilih menu: " main || continue
 
   case $main in
 
@@ -1637,7 +1749,13 @@ while true; do
       	        echo "[~] Menjalankan scenario..."
 
      	        while IFS= read -r cmd || [ -n "$cmd" ]; do
-        	  [ -z "$cmd" ] && continue
+
+		  [ -z "$cmd" ] && continue
+
+  		  [[ "$cmd" =~ ^# ]] && continue
+  		  
+  		  cmd=$(echo "$cmd" | xargs)
+                  [ -z "$cmd" ] && continue
 
 	          case "$cmd" in
 
@@ -1701,9 +1819,13 @@ while true; do
             fi
 	    ;;
 
-	   3)
+          3)
              break
              ;;
+        esac
+
+      done
+      ;;
              
     # =====================
     # 🚪 EXIT
@@ -1712,7 +1834,7 @@ while true; do
       echo -e "${RED}Exiting NETTOOLS...${NC}"
 
       pkill -P $$ 2>/dev/null
-      kill -9 "$WATCHDOG_PID" 2>/dev/null
+      kill "$WATCHDOG_PID" 2>/dev/null
 
       sleep 1
       clear
