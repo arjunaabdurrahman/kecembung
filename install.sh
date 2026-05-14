@@ -42,15 +42,11 @@ progress_bar() {
   local fill=$(printf "%${filled}s")
   local space=$(printf "%${empty}s")
 
-  printf "\r${CYAN}%-24s${NC} [${GREEN}%s${NC}%s] ${YELLOW}%3d%%${NC}" \
+  printf "${CYAN}%-24s${NC} [${GREEN}%s${NC}%s] ${YELLOW}%3d%%${NC}\n" \
     "$label" \
     "${fill// /█}" \
     "${space// /░}" \
     "$percent"
-
-  if [ "$current" -eq "$total" ]; then
-    echo ""
-  fi
 }
 
 # =========================
@@ -64,6 +60,10 @@ loading() {
   printf "\n${CYAN}%s...${NC}\n" "$text"
 }
 
+clean_line() {
+  printf "\n"
+}
+
 apt_install() {
 
   local pkgs="$1"
@@ -72,14 +72,16 @@ apt_install() {
 
   progress_bar 1 4 "Updating apt"
 
+  clean_line
   sudo apt update -y >/dev/null 2>&1 || return 1
 
   progress_bar 2 4 "Installing packages"
 
+  clean_line
   sudo apt install -y $pkgs >/dev/null 2>&1 || return 1
 
   progress_bar 3 4 "Finishing"
-  
+
   sleep 0.5
 
   progress_bar 4 4 "Complete"
@@ -205,6 +207,7 @@ ok "Files downloaded"
 # =========================
 loading "[~] Installing system command"
 
+clean_line
 sudo mv /tmp/nettool /usr/local/bin/nettool
 
 chmod +x /usr/local/bin/nettool
@@ -220,6 +223,7 @@ ok "Core installed"
 loading "[~] Creating system link"
 
 if [ ! -f /usr/bin/nettool ]; then
+  clean_line
   sudo ln -s /usr/local/bin/nettool /usr/bin/nettool
 fi
 
