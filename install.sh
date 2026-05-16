@@ -150,7 +150,11 @@ echo "    Advanced AI, RAG, automation, and LLM systems"
 echo "    Currently unavailable"
 echo ""
 
-read -p "Select edition [1-3]: " edition
+IFS= read -r -p "Select edition [1-3]: " edition
+
+if [ -z "$edition" ]; then
+  continue
+fi
 
 case $edition in
 
