@@ -251,7 +251,7 @@ case $edition in
     echo ""
 
     echo ""
-    read -p "Press ENTER to return..." dummy
+    IFS= read -r -p "Press ENTER to return..." dummy </dev/tty
     clear
     ;;
 
