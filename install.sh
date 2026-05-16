@@ -150,7 +150,7 @@ echo "    Advanced AI, RAG, automation, and LLM systems"
 echo "    Currently unavailable"
 echo ""
 
-IFS= read -r -p "Select edition [1-3]: " edition
+IFS= read -r -p "Select edition [1-3]: " edition </dev/tty
 
 if [ -z "$edition" ]; then
   continue
@@ -183,7 +183,7 @@ case $edition in
     echo "- Heavy dependencies"
     echo ""
 
-    read -p "Type YES to install Light Nettool: " confirm
+    IFS= read -r -p "Type YES to install Light Nettool: " confirm </dev/tty
 
     if [ "$confirm" = "YES" ]; then
       NETTOOL_MODE="LIGHT"
@@ -218,7 +218,7 @@ case $edition in
     echo "- 75GB or higher"
     echo ""
 
-    read -p "Type YES to install Normal Nettool: " confirm
+    IFS= read -r -p "Type YES to install Normal Nettool: " confirm </dev/tty
 
     if [ "$confirm" = "YES" ]; then
       NETTOOL_MODE="NORMAL"
