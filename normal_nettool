@@ -156,6 +156,14 @@ safe_ai() {
 }
 
 # =========================
+# AI Chat LLM
+# =========================
+
+AI_MODEL_DEFAULT="phi3:mini"
+AI_HISTORY_DIR="$HOME/nettools_ai_history"
+mkdir -p "$AI_HISTORY_DIR"
+
+# =========================
 # SAFE MENU RUN 
 # =========================
 safe_menu() {
@@ -1214,7 +1222,232 @@ cmd_ai_run() {
 }
 
 # =========================
-# 🧠 SCENARIO EXECUTION ENGINE (FIXED)
+# COMMAND MAP - AI CHAT
+# =========================
+
+cmd_ai_chat_start() {
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    return
+  fi
+
+  mkdir -p "$HOME/nettools_ai/history"
+
+  echo ""
+  echo "[~] Installed Models:"
+  ollama list
+
+  echo ""
+  IFS= read -r -p "Model: " model
+
+  [ -z "$model" ] && return
+
+  session_file="$HOME/nettools_ai/history/chat_$(date +%F_%H-%M-%S).txt"
+
+  echo ""
+  echo "[~] Ketik 'exit' untuk keluar"
+  echo ""
+
+  while true; do
+
+    echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+    IFS= read -r -p "You> " prompt
+
+    [ -z "$prompt" ] && continue
+
+    if [ "$prompt" = "exit" ]; then
+      break
+    fi
+
+    echo "[USER]" >> "$session_file"
+    echo "$prompt" >> "$session_file"
+    echo "" >> "$session_file"
+
+    response=$(ollama run "$model" "$prompt")
+
+    echo ""
+    echo "AI> $response"
+    echo ""
+
+    echo "[AI]" >> "$session_file"
+    echo "$response" >> "$session_file"
+    echo "" >> "$session_file"
+
+  done
+}
+
+cmd_ai_download_model() {
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    return
+  fi
+
+  echo ""
+  echo "Example Models:"
+  echo "- tinyllama"
+  echo "- phi3"
+  echo "- gemma:2b"
+  echo "- mistral"
+  echo ""
+
+  IFS= read -r -p "Model name: " model
+
+  [ -z "$model" ] && return
+
+  echo ""
+  echo "[~] Downloading model..."
+  echo ""
+
+  ollama pull "$model"
+
+  if [ $? -eq 0 ]; then
+    echo "[✔] Model downloaded"
+  else
+    echo "[!] Failed download model"
+  fi
+}
+
+cmd_ai_list_models() {
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    return
+  fi
+
+  echo ""
+  echo "========================="
+  echo " INSTALLED MODELS"
+  echo "========================="
+
+  ollama list
+
+  echo ""
+}
+
+cmd_ai_delete_model() {
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    return
+  fi
+
+  echo ""
+  echo "[~] Installed Models:"
+  ollama list
+
+  echo ""
+  IFS= read -r -p "Model to delete: " model
+
+  [ -z "$model" ] && return
+
+  echo ""
+  IFS= read -r -p "Type YES to confirm: " confirm
+
+  [ "$confirm" != "YES" ] && return
+
+  ollama rm "$model"
+
+  if [ $? -eq 0 ]; then
+    echo "[✔] Model deleted"
+  else
+    echo "[!] Failed delete model"
+  fi
+}
+
+cmd_ai_history() {
+
+  history_dir="$HOME/nettools_ai/history"
+
+  mkdir -p "$history_dir"
+
+  shopt -s nullglob
+  files=("$history_dir"/*.txt)
+  shopt -u nullglob
+
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "[!] Tidak ada AI history"
+    return
+  fi
+
+  echo ""
+  echo "========================="
+  echo "      AI HISTORY"
+  echo "========================="
+
+  for i in "${!files[@]}"; do
+    echo "$i. $(basename "${files[$i]}")"
+  done
+
+  echo ""
+
+  IFS= read -r -p "Pilih file: " pilih
+
+  [ -z "${files[$pilih]}" ] && return
+
+  echo ""
+  cat "${files[$pilih]}"
+
+  echo ""
+}
+
+cmd_ai_status() {
+
+  echo ""
+  echo "========================="
+  echo "       AI STATUS"
+  echo "========================="
+
+  if command -v ollama >/dev/null 2>&1; then
+    echo "[✔] Ollama Installed"
+  else
+    echo "[!] Ollama Not Installed"
+    return
+  fi
+
+  echo ""
+
+  if pgrep ollama >/dev/null 2>&1; then
+    echo "[✔] Ollama Service Running"
+  else
+    echo "[!] Ollama Service Not Running"
+  fi
+
+  echo ""
+  echo "[~] Installed Models:"
+  ollama list
+
+  echo ""
+  echo "[~] Memory Usage:"
+  free -h
+
+  echo ""
+  echo "[~] AI Storage:"
+  du -sh "$HOME/.ollama" 2>/dev/null
+
+  echo ""
+}
+
+cmd_ai_clear_history() {
+
+  history_dir="$HOME/nettools_ai/history"
+
+  mkdir -p "$history_dir"
+
+  echo ""
+  IFS= read -r -p "Type YES to clear history: " confirm
+
+  [ "$confirm" != "YES" ] && return
+
+  rm -rf "$history_dir"/*
+
+  echo "[✔] AI history cleared"
+}
+
+# =========================
+# 🧠 SCENARIO EXECUTION ENGINE
 # =========================
 
 run_command() {
@@ -1674,7 +1907,8 @@ while true; do
 	echo "5. Detect Video File"
         echo "6. Custom AI Train"
         echo "7. Custom AI Run"
-	echo "8. Kembali"
+        echo "8. AI Chat"
+	echo "9. Kembali"
         echo -e "${CYAN}=========================${NC}"
 
         IFS= read -r -p "Pilih menu: " aimenu || continue
@@ -1688,7 +1922,109 @@ while true; do
 	  5) cmd_ai_video ;;
 	  6) cmd_ai_train ;;
 	  7) cmd_ai_run ;;
-	  8) break ;;
+	  8)
+  	    while true; do
+
+    	      echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+    	      if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+      	        break
+    	      fi
+
+    	      echo -e "${CYAN}=========================${NC}"
+    	      echo -e "${GREEN}        AI CHAT${NC}"
+    	      echo -e "${CYAN}=========================${NC}"
+
+    	      echo "1. Start Chat"
+    	      echo "2. Model Manager"
+    	      echo "3. AI History"
+    	      echo "4. AI Status"
+    	      echo "5. Clear History"
+    	      echo "6. Kembali"
+
+    	      echo -e "${CYAN}=========================${NC}"
+
+    	      IFS= read -r -p "Pilih menu: " aichat || continue
+
+    	      case $aichat in
+
+      	        1)
+                  cmd_ai_chat_start
+                  ;;
+
+      	        2)
+                  while true; do
+
+                    echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+          	    if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+            	      break
+          	    fi
+
+          	    echo -e "${CYAN}=========================${NC}"
+          	    echo -e "${GREEN}      MODEL MANAGER${NC}"
+         	    echo -e "${CYAN}=========================${NC}"
+
+        	    echo "1. Download Model"
+        	    echo "2. List Installed Models"
+        	    echo "3. Delete Model"
+        	    echo "4. Kembali"
+
+        	    echo -e "${CYAN}=========================${NC}"
+
+          	    IFS= read -r -p "Pilih menu: " modelmenu || continue
+
+        	    case $modelmenu in
+
+            	      1)
+              	        cmd_ai_download_model
+             	        ;;
+
+            	      2)
+              	        cmd_ai_list_models
+              	        ;;
+
+                      3)
+                        cmd_ai_delete_model
+                        ;;
+
+                      4)
+                        break
+                        ;;
+
+            	      *)
+             	        echo -e "${RED}Invalid option${NC}"
+              	        ;;
+
+          	    esac
+
+        	  done
+                  ;;
+      	        3)
+                  cmd_ai_history
+                  ;;
+
+                4)
+                  cmd_ai_status
+                  ;;
+
+                5)
+                  cmd_ai_clear_history
+                  ;;
+
+                6)
+                  break
+                  ;;
+
+                *)
+                  echo -e "${RED}Invalid option${NC}"
+                  ;;
+
+              esac
+
+            done
+            ;;
+	  9) break ;;
           *)
             echo -e "${RED}Invalid option${NC}"
             ;;

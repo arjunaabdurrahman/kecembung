@@ -13,6 +13,12 @@ NC='\033[0m'
 trap 'echo ""; echo -e "${YELLOW}[!] Installer interrupted${NC}"; exit 1' SIGINT
 
 # =========================
+# 📁 SCRIPT DIRECTORY
+# =========================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# =========================
 # 🧰 FUNCTIONS
 # =========================
 
@@ -64,12 +70,17 @@ progress_bar() {
   local filled=$(( width * current / total ))
   local empty=$(( width - filled ))
 
-  printf "${CYAN}%-28s${NC} ${GREEN}[" "$label"
+  printf "\r${CYAN}%-28s${NC} ${GREEN}[" "$label"
 
   printf "%0.s█" $(seq 1 $filled)
+
   printf "%0.s░" $(seq 1 $empty)
 
-  printf "]${NC} ${YELLOW}%3d%%${NC}\n" "$percent"
+  printf "]${NC} ${YELLOW}%3d%%${NC}" "$percent"
+
+  if [ "$current" -eq "$total" ]; then
+    echo ""
+  fi
 }
 
 apt_install() {
@@ -121,6 +132,23 @@ loading_bar "Loading installer environment..."
 loading_bar "Checking system compatibility..."
 loading_bar "Preparing installation wizard..."
 sleep 0.3
+clear
+
+# =========================
+# 🔐 SUDO AUTH
+# =========================
+
+echo ""
+info "Administrator permission required"
+
+sudo -v || {
+  fail "Sudo authentication failed"
+  exit 1
+}
+
+ok "Authentication success"
+
+sleep 1
 clear
 
 # =========================
@@ -373,22 +401,24 @@ echo ""
 # =========================
 
 if [ "$NETTOOL_MODE" = "LIGHT" ]; then
-  [ ! -f light_nettool ] && fail "light_nettool missing in project folder" && exit 1
+  [ ! -f "$SCRIPT_DIR/light_nettool" ] && fail "light_nettool missing in project folder" && exit 1
 fi
 
 if [ "$NETTOOL_MODE" = "NORMAL" ]; then
-  [ ! -f normal_nettool ] && fail "normal_nettool missing in project folder" && exit 1
+  [ ! -f "$SCRIPT_DIR/normal_nettool" ] && fail "normal_nettool missing in project folder" && exit 1
 fi
+
 info "Preparing launcher"
 
 # =========================
 # 🟡 LIGHT NETTOOL
 # =========================
+
 if [ "$NETTOOL_MODE" = "LIGHT" ]; then
 
-  [ ! -f light_nettool ] && fail "light_nettool missing" && exit 1
+  [ ! -f "$SCRIPT_DIR/light_nettool" ] && fail "light_nettool missing" && exit 1
 
-  cp light_nettool /tmp/nettool || {
+  cp "$SCRIPT_DIR/light_nettool" /tmp/nettool || {
     fail "Failed to load Light Nettool"
     exit 1
   }
@@ -400,11 +430,12 @@ fi
 # =========================
 # 🟢 NORMAL NETTOOL
 # =========================
+
 if [ "$NETTOOL_MODE" = "NORMAL" ]; then
 
-  [ ! -f normal_nettool ] && fail "normal_nettool missing" && exit 1
+  [ ! -f "$SCRIPT_DIR/normal_nettool" ] && fail "normal_nettool missing" && exit 1
 
-  cp normal_nettool /tmp/nettool || {
+  cp "$SCRIPT_DIR/normal_nettool" /tmp/nettool || {
     fail "Failed to load Normal Nettool"
     exit 1
   }
@@ -493,6 +524,51 @@ info "Creating system link"
 sudo ln -sf /usr/local/bin/nettool /usr/bin/nettool
 
 ok "Command linked"
+
+# =========================
+# 🔐 SET NETTOOLS PASSWORD
+# =========================
+
+echo ""
+echo -e "${CYAN}==============================${NC}"
+echo -e "${GREEN} SET NETTOOLS PASSWORD${NC}"
+echo -e "${CYAN}==============================${NC}"
+
+PASS_FILE="$HOME/.nettool_pass"
+
+while true; do
+
+  IFS= read -r -s -p "Create NETTOOLS Password: " pass1 </dev/tty
+  echo ""
+
+  IFS= read -r -s -p "Confirm Password: " pass2 </dev/tty
+  echo ""
+
+  if [ -z "$pass1" ]; then
+
+    echo -e "${RED}[!] Password cannot be empty${NC}"
+    continue
+
+  fi
+
+  if [ "$pass1" != "$pass2" ]; then
+
+    echo -e "${RED}[!] Password mismatch${NC}"
+    continue
+
+  fi
+
+  break
+
+done
+
+PASS_HASH=$(echo -n "$pass1" | sha256sum | awk '{print $1}')
+
+echo "$PASS_HASH" > "$PASS_FILE"
+
+chmod 600 "$PASS_FILE"
+
+ok "NETTOOLS password configured"
 
 # =========================
 # 🎉 DONE
