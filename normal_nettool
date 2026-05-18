@@ -26,6 +26,7 @@ RETURN_TO_MAIN=0
 CRASH_FLAG=0
 SCENARIO_MODE=0
 SCENARIO_DEPTH=0
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 safe_kill() {
   local pid="$1"
@@ -202,7 +203,7 @@ safe_bg() {
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
 CURRENT_VERSION="1.0.0"
-REPO_URL="https://raw.githubusercontent.com/USERNAME/REPO/main"
+REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
 
 VERSION_URL="$REPO_URL/version.txt"
 CHANGELOG_URL="$REPO_URL/changelog.txt"
@@ -498,6 +499,15 @@ echo "[✔] Akses diterima"
 echo ""
 
 sleep 1
+
+check_update
+
+touch "$WATCHDOG_FILE"
+
+write_heartbeat "LOGIN"
+
+watchdog_loop &
+WATCHDOG_PID=$!
 
 check_update() {
 
@@ -975,17 +985,20 @@ cmd_ai_webcam_all() {
 
   mkdir -p "$storage_path/captures"
 
+  echo "[DEBUG] BASE_DIR = $BASE_DIR"
+  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$HOME/ai_detect.py" ]; then
+  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" all
+  safe_ai 0 "$PYTHON" "$BASE_DIR/ai_detect.py" 0 "$storage_path/captures" all
 
   log_save "AI Webcam All"
 }
@@ -996,17 +1009,20 @@ cmd_ai_webcam_person() {
 
   mkdir -p "$storage_path/captures"
 
+  echo "[DEBUG] BASE_DIR = $BASE_DIR"
+  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$HOME/ai_detect.py" ]; then
+  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" 0 "$storage_path/captures" person
+  safe_ai 0 "$PYTHON" "$BASE_DIR/ai_detect.py" 0 "$storage_path/captures" person
 
   log_save "AI Webcam Person"
 }
@@ -1016,6 +1032,9 @@ cmd_ai_rtsp() {
   read -p "RTSP URL: " rtsp
 
   mkdir -p "$storage_path/captures"
+
+  echo "[DEBUG] BASE_DIR = $BASE_DIR"
+  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
 
   if [ -z "$rtsp" ] || [[ ! "$rtsp" =~ ^rtsp:// ]]; then
     echo "[!] RTSP tidak valid"
@@ -1027,12 +1046,12 @@ cmd_ai_rtsp() {
     return
   fi
 
-  if [ ! -f "$HOME/ai_detect.py" ]; then
+  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 0 "$PYTHON" "$HOME/ai_detect.py" "$rtsp" "$storage_path/captures" all
+  safe_ai 0 "$PYTHON" "$BASE_DIR/ai_detect.py" "$rtsp" "$storage_path/captures" all
 
   log_save "AI CCTV RTSP"
 }
@@ -1042,6 +1061,9 @@ cmd_ai_image() {
   read -p "Image path: " img
 
   mkdir -p "$storage_path/captures"
+
+  echo "[DEBUG] BASE_DIR = $BASE_DIR"
+  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
 
   if [ ! -f "$img" ]; then
     echo "[!] File tidak ditemukan"
@@ -1053,12 +1075,12 @@ cmd_ai_image() {
     return
   fi
 
-  if [ ! -f "$HOME/ai_detect.py" ]; then
+  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 120 "$PYTHON" "$HOME/ai_detect.py" "$img" "$storage_path/captures" all
+  safe_ai 120 "$PYTHON" "$BASE_DIR/ai_detect.py" "$img" "$storage_path/captures" all
 
   log_save "AI Image Detect"
 }
@@ -1068,6 +1090,9 @@ cmd_ai_video() {
   read -p "Video path: " vid
 
   mkdir -p "$storage_path/captures"
+
+  echo "[DEBUG] BASE_DIR = $BASE_DIR"
+  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
 
   if [ ! -f "$vid" ]; then
     echo "[!] File tidak ditemukan"
@@ -1079,12 +1104,12 @@ cmd_ai_video() {
     return
   fi
 
-  if [ ! -f "$HOME/ai_detect.py" ]; then
+  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 120 "$PYTHON" "$HOME/ai_detect.py" "$vid" "$storage_path/captures" all
+  safe_ai 120 "$PYTHON" "$BASE_DIR/ai_detect.py" "$vid" "$storage_path/captures" all
 
   log_save "AI Video Detect"
 }
@@ -1095,12 +1120,15 @@ cmd_ai_train() {
 
   mkdir -p "$storage_path/captures"
 
+  echo "[DEBUG] BASE_DIR = $BASE_DIR"
+  echo "[DEBUG] FILE = $BASE_DIR/ai_train.py"
+
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$HOME/ai_train.py" ]; then
+  if [ ! -f "$BASE_DIR/ai_train.py" ]; then
     echo "[!] ai_train.py tidak ditemukan"
     return
   fi
@@ -1110,7 +1138,7 @@ cmd_ai_train() {
     return
   fi
 
-  mapfile -t files < <(find "$HOME" -maxdepth 5 -type f -name "data.yaml")
+  mapfile -t files < <(find "$BASE_DIR" -maxdepth 5 -type f -name "data.yaml")
 
   if [ ${#files[@]} -eq 0 ]; then
     echo "[!] Tidak ditemukan data.yaml"
@@ -1118,8 +1146,9 @@ cmd_ai_train() {
   fi
 
   options=()
+
   for i in "${!files[@]}"; do
-    options+=($i "${files[$i]}")
+    options+=("$i" "${files[$i]}")
   done
 
   choice=$(dialog --menu "Pilih data.yaml:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
@@ -1137,6 +1166,7 @@ cmd_ai_train() {
   data="${files[$choice]}"
 
   echo "[!] Kamu pilih: $data"
+
   read -p "Ketik YES untuk training: " confirm
 
   if [ "$confirm" != "YES" ]; then
@@ -1144,7 +1174,7 @@ cmd_ai_train() {
     return
   fi
 
-  safe_ai 60 "$PYTHON" "$HOME/ai_train.py" "$data"
+  safe_ai 60 "$PYTHON" "$BASE_DIR/ai_train.py" "$data"
 
   log_save "Custom AI Training"
 }
@@ -1155,12 +1185,15 @@ cmd_ai_run() {
 
   mkdir -p "$storage_path/captures"
 
+  echo "[DEBUG] BASE_DIR = $BASE_DIR"
+  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$HOME/ai_detect.py" ]; then
+  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
@@ -1170,7 +1203,7 @@ cmd_ai_run() {
     return
   fi
 
-  mapfile -t models < <(find "$HOME" -maxdepth 4 -type f -name "best.pt")
+  mapfile -t models < <(find "$BASE_DIR" -maxdepth 4 -type f -name "best.pt")
 
   if [ ${#models[@]} -eq 0 ]; then
     echo "[!] Tidak ada model"
@@ -1178,13 +1211,13 @@ cmd_ai_run() {
   fi
 
   options=()
+
   for i in "${!models[@]}"; do
     options+=("$i" "${models[$i]}")
   done
 
   choice=$(dialog --menu "Pilih model:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
 
-  # handle cancel
   if [ -z "$choice" ]; then
     echo "[!] Dibatalkan user"
     return
@@ -1204,19 +1237,21 @@ cmd_ai_run() {
 
   echo "1. Webcam"
   echo "2. RTSP"
+
   read -p "Pilih: " mode
 
   if [ "$mode" = "1" ]; then
     src=0
   else
     read -p "RTSP URL: " src
+
     if [[ -z "$src" || ! "$src" =~ ^rtsp:// ]]; then
       echo "[!] RTSP tidak valid"
       return
     fi
   fi
 
-  safe_ai 60 "$PYTHON" "$HOME/ai_detect.py" "$src" "$storage_path/captures" all "$model"
+  safe_ai 60 "$PYTHON" "$BASE_DIR/ai_detect.py" "$src" "$storage_path/captures" all "$model"
 
   log_save "Custom AI Run"
 }

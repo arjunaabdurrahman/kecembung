@@ -40,6 +40,10 @@ info() {
   echo -e "${CYAN}[~] $1${NC}"
 }
 
+warn() {
+  echo -e "${YELLOW}[!] $1${NC}"
+}
+
 loading_bar() {
 
   local text="$1"
@@ -347,20 +351,69 @@ fi
 # =========================
 # 🤖 AI ENV (NORMAL)
 # =========================
+
+check_ai_backend() {
+
+  AI_ENV="$HOME/nettool-env"
+
+  # cek folder env
+  if [ ! -d "$AI_ENV" ]; then
+    return 1
+  fi
+
+  # cek python
+  if [ ! -x "$AI_ENV/bin/python" ]; then
+    return 1
+  fi
+
+  # cek pip
+  if [ ! -x "$AI_ENV/bin/pip" ]; then
+    return 1
+  fi
+
+  # cek dependency python
+  "$AI_ENV/bin/python" -c "
+import ultralytics
+import cv2
+import torch
+" >/dev/null 2>&1
+
+  return $?
+}
+
 if [ "$NETTOOL_MODE" = "NORMAL" ]; then
 
-  info "Setting up AI environment..."
+  AI_ENV="$HOME/nettool-env"
 
-  python3 -m venv ~/nettool-env
+  info "Checking AI backend..."
 
-  ~/nettool-env/bin/pip install --upgrade pip >/dev/null 2>&1
+  if check_ai_backend; then
 
-  ~/nettool-env/bin/pip install ultralytics opencv-python >/dev/null 2>&1
+    ok "AI backend already installed"
+    info "Skipping AI installation"
 
-  ~/nettool-env/bin/pip install torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cpu >/dev/null 2>&1
+  else
 
-  ok "AI environment ready"
+    warn "AI backend missing/corrupted"
+    info "Installing AI backend..."
+
+    rm -rf "$AI_ENV"
+
+    python3 -m venv "$AI_ENV"
+
+    "$AI_ENV/bin/pip" install --upgrade pip \
+      >/dev/null 2>&1
+
+    "$AI_ENV/bin/pip" install ultralytics opencv-python \
+      --no-cache-dir >/dev/null 2>&1
+
+    "$AI_ENV/bin/pip" install torch torchvision torchaudio \
+      --index-url https://download.pytorch.org/whl/cpu \
+      >/dev/null 2>&1
+
+    ok "AI environment ready"
+
+  fi
 
 fi
 
