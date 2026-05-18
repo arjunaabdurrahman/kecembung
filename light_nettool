@@ -284,6 +284,8 @@ sleep 1
 
 touch "$WATCHDOG_FILE"
 
+write_heartbeat "LOGIN"
+
 watchdog_loop &
 WATCHDOG_PID=$!
 
