@@ -212,11 +212,6 @@ watchdog_loop() {
   done
 }
 
-touch "$WATCHDOG_FILE"
-
-watchdog_loop &
-WATCHDOG_PID=$!
-
 # =========================
 # 💾 STORAGE SYSTEM
 # =========================
@@ -286,6 +281,11 @@ fi
 
 echo "[✔] Akses diterima"
 sleep 1
+
+touch "$WATCHDOG_FILE"
+
+watchdog_loop &
+WATCHDOG_PID=$!
 
 # =========================
 # 🌐 IP TOOLS
