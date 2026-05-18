@@ -19,6 +19,12 @@ trap 'echo ""; echo -e "${YELLOW}[!] Installer interrupted${NC}"; exit 1' SIGINT
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # =========================
+# 🌐 GITHUB SOURCE
+# =========================
+
+BASE_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
+
+# =========================
 # 🧰 FUNCTIONS
 # =========================
 
@@ -397,33 +403,17 @@ ok "Folders created"
 echo ""
 
 # =========================
-# 🔍 VALIDASI FILE NETTOOL
-# =========================
-
-if [ "$NETTOOL_MODE" = "LIGHT" ]; then
-  [ ! -f "$SCRIPT_DIR/light_nettool" ] && fail "light_nettool missing in project folder" && exit 1
-fi
-
-if [ "$NETTOOL_MODE" = "NORMAL" ]; then
-  [ ! -f "$SCRIPT_DIR/normal_nettool" ] && fail "normal_nettool missing in project folder" && exit 1
-fi
-
-info "Preparing launcher"
-
-# =========================
 # 🟡 LIGHT NETTOOL
 # =========================
 
 if [ "$NETTOOL_MODE" = "LIGHT" ]; then
 
-  [ ! -f "$SCRIPT_DIR/light_nettool" ] && fail "light_nettool missing" && exit 1
-
-  cp "$SCRIPT_DIR/light_nettool" /tmp/nettool || {
-    fail "Failed to load Light Nettool"
+  wget -q -O /tmp/nettool "$BASE_URL/light_nettool" || {
+    fail "Failed to download Light Nettool"
     exit 1
   }
 
-  ok "Light Nettool selected"
+  ok "Light Nettool downloaded"
 
 fi
 
@@ -433,14 +423,12 @@ fi
 
 if [ "$NETTOOL_MODE" = "NORMAL" ]; then
 
-  [ ! -f "$SCRIPT_DIR/normal_nettool" ] && fail "normal_nettool missing" && exit 1
-
-  cp "$SCRIPT_DIR/normal_nettool" /tmp/nettool || {
-    fail "Failed to load Normal Nettool"
+  wget -q -O /tmp/nettool "$BASE_URL/normal_nettool" || {
+    fail "Failed to download Normal Nettool"
     exit 1
   }
 
-  ok "Normal Nettool selected"
+  ok "Normal Nettool downloaded"
 
 fi
 
