@@ -42,10 +42,6 @@ write_heartbeat() {
     echo "$(date +%s)" > "$HEARTBEAT_FILE"
 }
 
-check_update() {
-    return 0
-}
-
 safe_kill() {
   local pid="$1"
 
@@ -334,72 +330,118 @@ safe_run() {
 }
 
 # =========================
-# 🐶 WATCHDOG SYSTEM
+# 🛡️ UPDATE CHECK
 # =========================
-#watchdog_loop() {
-  local WATCHDOG_TIMEOUT=120
-  local recovery_lock_file="/tmp/nettools_recovery.lock"
 
-  while true; do
-    sleep 2
+check_update() {
 
-    cleanup_child
+  echo "[~] Mengecek update..."
 
-    [ "$RECOVERY_MODE" -eq 1 ] && {
-      write_heartbeat "RECOVERY"
-      continue
-    }
+  # cek internet cepat
+  ping -c 1 8.8.8.8 &>/dev/null || return
 
-    [ ! -f "$WATCHDOG_FILE" ] && continue
+  LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL")
 
-    line=$(cat "$WATCHDOG_FILE" 2>/dev/null)
+  if [ -z "$LATEST_VERSION" ]; then
+    echo "[!] Gagal ambil versi terbaru"
+    return
+  fi
 
-    last=$(echo "$line" | cut -d'|' -f1)
-    src=$(echo "$line" | cut -d'|' -f2)
+  if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
 
-    # VALIDATION HARD
-    [[ ! "$last" =~ ^[0-9]+$ ]] && continue
+    echo ""
+    echo "================================="
+    echo "⚠️ UPDATE TERSEDIA!"
+    echo "Versi kamu : $CURRENT_VERSION"
+    echo "Versi baru : $LATEST_VERSION"
+    echo ""
 
-    now=$(date +%s)
-    diff=$((now - last))
+    echo "Perubahan:"
+    curl -s "$CHANGELOG_URL"
+    echo ""
 
-    # IGNORE SHORT SPIKES
-    if [ "$diff" -lt 3 ]; then
-      continue
-    fi
+    echo "1. Update sekarang"
+    echo "2. Nanti"
+    echo "================================="
 
-    if [ "$diff" -ge "$WATCHDOG_TIMEOUT" ]; then
+    IFS= read -r -p "Pilih: " pilih
 
-      # GLOBAL LOCK (ANTI DOUBLE RECOVERY)
-      if [ -f "$recovery_lock_file" ]; then
-        continue
-      fi
+    case $pilih in
+      1)
+        do_update
+        ;;
+      2)
+        echo "[~] Melewati update..."
+        ;;
+      *)
+        echo "[!] Pilihan tidak valid"
+        ;;
+    esac
 
-      touch "$recovery_lock_file"
+  fi
+}
 
-      echo "[!] WATCHDOG: freeze detected (${diff}s from $src)"
+do_update() {
 
-      kill_process "$CURRENT_CHILD"
-      kill_process "$CURRENT_PID"
+  echo ""
+  echo "[~] Memulai update NETTOOLS..."
+  sleep 1
 
-      CURRENT_CHILD=""
-      CURRENT_PID=0
+  TMP_DIR="/tmp/nettool_update"
+  mkdir -p "$TMP_DIR"
 
-      RETURN_TO_MAIN=1
-      RECOVERY_MODE=1
-      INTERRUPTED=1
+  SCRIPT_PATH="$(realpath "$0")"
+  TMP_FILE="$TMP_DIR/nettool_new"
 
-      write_heartbeat "WATCHDOG_RECOVERY"
+  echo "[~] Downloading update..."
 
-      log_save "WATCHDOG TRIGGERED ($src)"
+  curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$TMP_FILE"
 
-      # unlock after short cooldown
-      (
-        sleep 5
-        rm -f "$recovery_lock_file"
-      ) &
-    fi
-  done
+  # VALIDASI download
+  if [ ! -s "$TMP_FILE" ]; then
+    echo "[!] Gagal download update (file kosong)"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  # VALIDASI basic (biar bukan file rusak)
+  if ! head -n 1 "$TMP_FILE" | grep -q "#!/bin/bash"; then
+    echo "[!] File update tidak valid!"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  chmod +x "$TMP_FILE"
+
+  echo "[~] Backup script lama..."
+  cp "$SCRIPT_PATH" "$SCRIPT_PATH.bak"
+
+  if [ $? -ne 0 ]; then
+    echo "[!] Gagal backup"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  echo "[~] Mengganti script..."
+
+  mv "$TMP_FILE" "$SCRIPT_PATH"
+  chmod +x "$SCRIPT_PATH"
+
+  if [ $? -ne 0 ]; then
+    echo "[!] Gagal replace script!"
+    echo "[~] Restore backup..."
+    cp "$SCRIPT_PATH.bak" "$SCRIPT_PATH"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  rm -rf "$TMP_DIR"
+
+  echo "[✔] Update berhasil!"
+  echo "[~] Restarting NETTOOLS..."
+  sleep 1
+
+  exec "$SCRIPT_PATH"
 }
 
 # =========================
@@ -520,136 +562,11 @@ sleep 1
 
 check_update
 
-touch "$WATCHDOG_FILE"
-
-write_heartbeat "LOGIN"
-
-watchdog_loop &
-WATCHDOG_PID=$!
-
-check_update() {
-
-  echo "[~] Mengecek update..."
-
-  # cek internet cepat
-  ping -c 1 8.8.8.8 &>/dev/null || return
-
-  LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL")
-
-  if [ -z "$LATEST_VERSION" ]; then
-    echo "[!] Gagal ambil versi terbaru"
-    return
-  fi
-
-  if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
-
-    echo ""
-    echo "================================="
-    echo "⚠️ UPDATE TERSEDIA!"
-    echo "Versi kamu : $CURRENT_VERSION"
-    echo "Versi baru : $LATEST_VERSION"
-    echo ""
-
-    echo "Perubahan:"
-    curl -s "$CHANGELOG_URL"
-    echo ""
-
-    echo "1. Update sekarang"
-    echo "2. Nanti"
-    echo "================================="
-
-    IFS= read -r -p "Pilih: " pilih
-
-    case $pilih in
-      1)
-        do_update
-        ;;
-      2)
-        echo "[~] Melewati update..."
-        ;;
-      *)
-        echo "[!] Pilihan tidak valid"
-        ;;
-    esac
-
-  fi
-}
-
-do_update() {
-
-  echo ""
-  echo "[~] Memulai update NETTOOLS..."
-  sleep 1
-
-  TMP_DIR="/tmp/nettool_update"
-  mkdir -p "$TMP_DIR"
-
-  SCRIPT_PATH="$(realpath "$0")"
-  TMP_FILE="$TMP_DIR/nettool_new"
-
-  echo "[~] Downloading update..."
-
-  curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$TMP_FILE"
-
-  # VALIDASI download
-  if [ ! -s "$TMP_FILE" ]; then
-    echo "[!] Gagal download update (file kosong)"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  # VALIDASI basic (biar bukan file rusak)
-  if ! head -n 1 "$TMP_FILE" | grep -q "#!/bin/bash"; then
-    echo "[!] File update tidak valid!"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  chmod +x "$TMP_FILE"
-
-  echo "[~] Backup script lama..."
-  cp "$SCRIPT_PATH" "$SCRIPT_PATH.bak"
-
-  if [ $? -ne 0 ]; then
-    echo "[!] Gagal backup"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  echo "[~] Mengganti script..."
-
-  mv "$TMP_FILE" "$SCRIPT_PATH"
-  chmod +x "$SCRIPT_PATH"
-
-  if [ $? -ne 0 ]; then
-    echo "[!] Gagal replace script!"
-    echo "[~] Restore backup..."
-    cp "$SCRIPT_PATH.bak" "$SCRIPT_PATH"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  rm -rf "$TMP_DIR"
-
-  echo "[✔] Update berhasil!"
-  echo "[~] Restarting NETTOOLS..."
-  sleep 1
-
-  exec "$SCRIPT_PATH"
-}
-
 # =========================
 # 💾 STORAGE SYSTEM
 # =========================
 storage_mode="local"
 storage_path="$HOME/nettools_logs"
-
-WATCHDOG_FILE="/tmp/nettools_watchdog"
-touch "$WATCHDOG_FILE"
-echo "$(date +%s)" > "$WATCHDOG_FILE"
-
-watchdog_loop &
-WATCHDOG_PID=$!
 
 USB_PATH=""
 USB_SELECTED=0
@@ -1681,12 +1598,10 @@ while true; do
   case $main in
 
     # =====================
-    # 🌐 IP TOOLS (10 MENU)
+    # 🌐 IP TOOLS 
     # =====================
     1)
       while true; do
-
-        echo "$(date +%s)" > "$WATCHDOG_FILE"
 
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
@@ -1773,8 +1688,6 @@ while true; do
     2)
       while true; do
       
-        echo "$(date +%s)" > "$WATCHDOG_FILE"
-      
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
 	fi
@@ -1833,9 +1746,7 @@ while true; do
     # =====================
     3)
       while true; do
-      
-        echo "$(date +%s)" > "$WATCHDOG_FILE"
-      
+     
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
 	fi
@@ -1878,8 +1789,6 @@ while true; do
             fi
             
             while true; do
-            
-              echo "$(date +%s)" > "$WATCHDOG_FILE"
             
               if [ "$RETURN_TO_MAIN" -eq 1 ]; then
   	        break
@@ -1944,8 +1853,6 @@ while true; do
     4)
       while true; do
       
-        echo "$(date +%s)" > "$WATCHDOG_FILE"
-      
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
   	  break
 	fi
@@ -1977,9 +1884,7 @@ while true; do
 	  7) cmd_ai_run ;;
 	  8)
   	    while true; do
-
-    	      echo "$(date +%s)" > "$WATCHDOG_FILE"
-
+  	    
     	      if [ "$RETURN_TO_MAIN" -eq 1 ]; then
       	        break
     	      fi
@@ -2092,8 +1997,6 @@ while true; do
     # =====================
     5)
       while true; do
-      
-        echo "$(date +%s)" > "$WATCHDOG_FILE"
       
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
@@ -2223,7 +2126,7 @@ while true; do
       echo -e "${RED}Exiting NETTOOLS...${NC}"
 
       pkill -P $$ 2>/dev/null
-      kill "$WATCHDOG_PID" 2>/dev/null
+     
 
       sleep 1
       clear

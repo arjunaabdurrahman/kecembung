@@ -487,28 +487,66 @@ if [ "$NETTOOL_MODE" = "NORMAL" ]; then
 
   ok "Normal Nettool downloaded"
   
-  echo "[+] Installing AI modules..."
+  echo ""
+  info "Installing AI modules"
 
   mkdir -p "$HOME/.nettool/ai"
   mkdir -p "$HOME/.nettool/scenarios"
 
-  # AI Detect
+# =========================
+# AI DETECT
+# =========================
+
+  progress_bar 1 4 "Downloading AI Detect"
+
   curl -sSL \
   https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/ai/ai_detect.py \
-  -o "$HOME/.nettool/ai/ai_detect.py"
+  -o "$HOME/.nettool/ai/ai_detect.py" || {
+    fail "Failed to download ai_detect.py"
+    exit 1
+  }
 
-  # Train
+  sleep 0.3
+
+# =========================
+# TRAIN
+# =========================
+
+  progress_bar 2 4 "Downloading Trainer"
+
   curl -sSL \
   https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/ai/train.py \
-  -o "$HOME/.nettool/ai/train.py"
+  -o "$HOME/.nettool/ai/train.py" || {
+    fail "Failed to download train.py"
+    exit 1
+  }
 
-  # Scenario Builder
+  sleep 0.3
+
+# =========================
+# SCENARIO BUILDER
+# =========================
+
+  progress_bar 3 4 "Downloading Scenario Builder"
+
   curl -sSL \
   https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/scenario/scenario_builder.sh \
-  -o "$HOME/.nettool/scenarios/scenario_builder.sh"
+  -o "$HOME/.nettool/scenarios/scenario_builder.sh" || {
+    fail "Failed to download scenario_builder.sh"
+    exit 1
+  }
 
   chmod +x "$HOME/.nettool/scenarios/scenario_builder.sh"
 
+  sleep 0.3
+
+# =========================
+# COMPLETE
+# =========================
+
+progress_bar 4 4 "Finalizing AI modules"
+
+ok "AI modules installed"
   # =========================
   # DOWNLOAD AI FILES
   # =========================
