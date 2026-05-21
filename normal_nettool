@@ -1065,7 +1065,7 @@ cmd_ai_image() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_DETECT
+  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ ! -f "$img" ]; then
     echo "[!] File tidak ditemukan"
