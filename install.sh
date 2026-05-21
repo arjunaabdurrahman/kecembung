@@ -476,12 +476,67 @@ fi
 
 if [ "$NETTOOL_MODE" = "NORMAL" ]; then
 
+  # =========================
+  # DOWNLOAD MAIN NETTOOL
+  # =========================
+
   wget -q -O /tmp/nettool "$BASE_URL/normal_nettool" || {
     fail "Failed to download Normal Nettool"
     exit 1
   }
 
   ok "Normal Nettool downloaded"
+  
+  echo "[+] Installing AI modules..."
+
+  mkdir -p "$HOME/.nettool/ai"
+  mkdir -p "$HOME/.nettool/scenarios"
+
+  # AI Detect
+  curl -sSL \
+  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/ai/ai_detect.py \
+  -o "$HOME/.nettool/ai/ai_detect.py"
+
+  # Train
+  curl -sSL \
+  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/ai/train.py \
+  -o "$HOME/.nettool/ai/train.py"
+
+  # Scenario Builder
+  curl -sSL \
+  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/scenario/scenario_builder.sh \
+  -o "$HOME/.nettool/scenarios/scenario_builder.sh"
+
+  chmod +x "$HOME/.nettool/scenarios/scenario_builder.sh"
+
+  # =========================
+  # DOWNLOAD AI FILES
+  # =========================
+
+  info "Downloading AI backend files"
+
+  sudo mkdir -p /usr/local/share/nettool
+
+  # ai_detect.py
+  wget -q -O /tmp/ai_detect.py "$BASE_URL/ai_detect.py" || {
+    fail "Failed to download ai_detect.py"
+    exit 1
+  }
+
+  # ai_train.py
+  wget -q -O /tmp/ai_train.py "$BASE_URL/ai_train.py" || {
+    fail "Failed to download ai_train.py"
+    exit 1
+  }
+
+  # move files
+  sudo mv /tmp/ai_detect.py /usr/local/share/nettool/ai_detect.py
+  sudo mv /tmp/ai_train.py /usr/local/share/nettool/ai_train.py
+
+  sudo chmod +x /usr/local/share/nettool/ai_detect.py
+  sudo chmod +x /usr/local/share/nettool/ai_train.py
+
+  ok "AI backend files installed"
 
 fi
 

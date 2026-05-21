@@ -26,7 +26,25 @@ RETURN_TO_MAIN=0
 CRASH_FLAG=0
 SCENARIO_MODE=0
 SCENARIO_DEPTH=0
-BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+BASE_DIR="$HOME/nettools"
+
+# =========================
+# ❤️ HEARTBEAT
+# =========================
+
+NETTOOL_DIR="$HOME/.nettool"
+
+mkdir -p "$NETTOOL_DIR"
+
+HEARTBEAT_FILE="$NETTOOL_DIR/heartbeat"
+
+write_heartbeat() {
+    echo "$(date +%s)" > "$HEARTBEAT_FILE"
+}
+
+check_update() {
+    return 0
+}
 
 safe_kill() {
   local pid="$1"
@@ -318,7 +336,7 @@ safe_run() {
 # =========================
 # 🐶 WATCHDOG SYSTEM
 # =========================
-watchdog_loop() {
+#watchdog_loop() {
   local WATCHDOG_TIMEOUT=120
   local recovery_lock_file="/tmp/nettools_recovery.lock"
 
