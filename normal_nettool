@@ -988,19 +988,19 @@ cmd_ai_webcam_all() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
+  if [ ! -f "$AI_DETECT" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 0 "$PYTHON" "$BASE_DIR/ai_detect.py" 0 "$storage_path/captures" all
+  safe_ai 0 "$PYTHON" "$AI_DETECT" 0 "$storage_path/captures" all
 
   log_save "AI Webcam All"
 }
@@ -1012,19 +1012,19 @@ cmd_ai_webcam_person() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
+  if [ ! -f "$AI_DETECT" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 0 "$PYTHON" "$BASE_DIR/ai_detect.py" 0 "$storage_path/captures" person
+  safe_ai 0 "$PYTHON" "$AI_DETECT" 0 "$storage_path/captures" person
 
   log_save "AI Webcam Person"
 }
@@ -1036,7 +1036,7 @@ cmd_ai_rtsp() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ -z "$rtsp" ] || [[ ! "$rtsp" =~ ^rtsp:// ]]; then
     echo "[!] RTSP tidak valid"
@@ -1048,12 +1048,12 @@ cmd_ai_rtsp() {
     return
   fi
 
-  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
+  if [ ! -f "$AI_DETECT" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 0 "$PYTHON" "$BASE_DIR/ai_detect.py" "$rtsp" "$storage_path/captures" all
+  safe_ai 0 "$PYTHON" "$AI_DETECT" "$rtsp" "$storage_path/captures" all
 
   log_save "AI CCTV RTSP"
 }
@@ -1065,7 +1065,7 @@ cmd_ai_image() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+  echo "[DEBUG] FILE = $AI_DETECT
 
   if [ ! -f "$img" ]; then
     echo "[!] File tidak ditemukan"
@@ -1077,12 +1077,12 @@ cmd_ai_image() {
     return
   fi
 
-  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
+  if [ ! -f "$AI_DETECT" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 120 "$PYTHON" "$BASE_DIR/ai_detect.py" "$img" "$storage_path/captures" all
+  safe_ai 120 "$PYTHON" "$AI_DETECT" "$img" "$storage_path/captures" all
 
   log_save "AI Image Detect"
 }
@@ -1094,7 +1094,7 @@ cmd_ai_video() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ ! -f "$vid" ]; then
     echo "[!] File tidak ditemukan"
@@ -1106,12 +1106,12 @@ cmd_ai_video() {
     return
   fi
 
-  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
+  if [ ! -f "$AI_DETECT" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
 
-  safe_ai 120 "$PYTHON" "$BASE_DIR/ai_detect.py" "$vid" "$storage_path/captures" all
+  safe_ai 120 "$PYTHON" "$AI_DETECT" "$vid" "$storage_path/captures" all
 
   log_save "AI Video Detect"
 }
@@ -1123,14 +1123,14 @@ cmd_ai_train() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $BASE_DIR/ai_train.py"
+  echo "[DEBUG] FILE = $AI_TRAIN"
 
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$BASE_DIR/ai_train.py" ]; then
+  if [ ! -f "$AI_TRAIN" ]; then
     echo "[!] ai_train.py tidak ditemukan"
     return
   fi
@@ -1176,7 +1176,7 @@ cmd_ai_train() {
     return
   fi
 
-  safe_ai 60 "$PYTHON" "$BASE_DIR/ai_train.py" "$data"
+  safe_ai 60 "$PYTHON" "$AI_TRAIN" "$data"
 
   log_save "Custom AI Training"
 }
@@ -1188,14 +1188,14 @@ cmd_ai_run() {
   mkdir -p "$storage_path/captures"
 
   echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $BASE_DIR/ai_detect.py"
+  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
   fi
 
-  if [ ! -f "$BASE_DIR/ai_detect.py" ]; then
+  if [ ! -f "$AI_DETECT" ]; then
     echo "[!] ai_detect.py tidak ditemukan"
     return
   fi
@@ -1253,7 +1253,7 @@ cmd_ai_run() {
     fi
   fi
 
-  safe_ai 60 "$PYTHON" "$BASE_DIR/ai_detect.py" "$src" "$storage_path/captures" all "$model"
+  safe_ai 60 "$PYTHON" "$AI_DETECT" "$src" "$storage_path/captures" all "$model"
 
   log_save "Custom AI Run"
 }
@@ -2171,12 +2171,12 @@ while true; do
 	  ;;
 
           2)
-            if [ -f ~/scenario_builder.sh ]; then
-    	      bash ~/scenario_builder.sh
+            if [ -f "$SCENARIO_BUILDER" ]; then
+                bash "$SCENARIO_BUILDER"
             else
-    	      echo "[!] scenario_builder.sh tidak ditemukan"
+                echo "[!] scenario_builder.sh tidak ditemukan"
             fi
-	    ;;
+            ;;
 
           3)
              break
