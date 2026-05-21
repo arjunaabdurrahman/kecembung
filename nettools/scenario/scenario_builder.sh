@@ -169,9 +169,9 @@ while true; do
       echo -e "${CYAN}=========================${NC}"
       read -p "👉 Nama scenario (tanpa spasi, pakai _): " scen_name
 
-      if [ -z "$scen_name" ]; then
-        echo -e "${RED}[!] Nama tidak boleh kosong${NC}"
-        return
+      if [ -z "$name" ]; then
+        echo "[!] Nama tidak boleh kosong"
+        continue
       fi
 
       if [[ "$scen_name" =~ [[:space:]] ]]; then

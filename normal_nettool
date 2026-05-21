@@ -66,16 +66,6 @@ LOG_DIR="$BASE_DIR/logs"
 mkdir -p "$LOG_DIR"
 
 # =========================
-# 🔍 DEBUG
-# =========================
-
-echo "[DEBUG] BASE_DIR = $BASE_DIR"
-echo "[DEBUG] AI_DIR = $AI_DIR"
-echo "[DEBUG] AI_DETECT = $AI_DETECT"
-echo "[DEBUG] AI_TRAIN = $AI_TRAIN"
-echo "[DEBUG] SCENARIO_BUILDER = $SCENARIO_BUILDER"
-
-# =========================
 # ✅ VALIDATION
 # =========================
 
@@ -987,9 +977,6 @@ cmd_ai_webcam_all() {
 
   mkdir -p "$storage_path/captures"
 
-  echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_DETECT"
-
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
@@ -1011,9 +998,6 @@ cmd_ai_webcam_person() {
 
   mkdir -p "$storage_path/captures"
 
-  echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_DETECT"
-
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
     return
@@ -1034,9 +1018,6 @@ cmd_ai_rtsp() {
   read -p "RTSP URL: " rtsp
 
   mkdir -p "$storage_path/captures"
-
-  echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ -z "$rtsp" ] || [[ ! "$rtsp" =~ ^rtsp:// ]]; then
     echo "[!] RTSP tidak valid"
@@ -1064,9 +1045,6 @@ cmd_ai_image() {
 
   mkdir -p "$storage_path/captures"
 
-  echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_DETECT"
-
   if [ ! -f "$img" ]; then
     echo "[!] File tidak ditemukan"
     return
@@ -1093,9 +1071,6 @@ cmd_ai_video() {
 
   mkdir -p "$storage_path/captures"
 
-  echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_DETECT"
-
   if [ ! -f "$vid" ]; then
     echo "[!] File tidak ditemukan"
     return
@@ -1121,9 +1096,6 @@ cmd_ai_train() {
   echo "[~] Mencari data.yaml..."
 
   mkdir -p "$storage_path/captures"
-
-  echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_TRAIN"
 
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
@@ -1186,9 +1158,6 @@ cmd_ai_run() {
   echo "[~] Pilih model folder..."
 
   mkdir -p "$storage_path/captures"
-
-  echo "[DEBUG] BASE_DIR = $BASE_DIR"
-  echo "[DEBUG] FILE = $AI_DETECT"
 
   if [ ! -x "$PYTHON" ]; then
     echo "[!] Python env tidak siap"
