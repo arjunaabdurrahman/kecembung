@@ -515,13 +515,11 @@ if [ "$NETTOOL_MODE" = "NORMAL" ]; then
   progress_bar 2 4 "Downloading Trainer"
 
   curl -sSL \
-  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/ai/train.py \
-  -o "$HOME/.nettool/ai/train.py" || {
-    fail "Failed to download train.py"
-    exit 1
+  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/ai_train.py \
+  -o "$HOME/.nettool/ai/ai_train.py" || {
+      fail "Failed to download ai_train.py"
+      exit 1
   }
-
-  sleep 0.3
 
 # =========================
 # SCENARIO BUILDER
