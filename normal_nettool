@@ -26,7 +26,74 @@ RETURN_TO_MAIN=0
 CRASH_FLAG=0
 SCENARIO_MODE=0
 SCENARIO_DEPTH=0
-BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# =========================
+# 📁 NETTOOLS BASE DIRECTORY
+# =========================
+
+BASE_DIR="$HOME/.nettool"
+
+# =========================
+# 🤖 AI DIRECTORY
+# =========================
+
+AI_DIR="$BASE_DIR/ai"
+
+AI_DETECT="$AI_DIR/ai_detect.py"
+AI_TRAIN="$AI_DIR/ai_train.py"
+
+# =========================
+# 🎭 SCENARIO DIRECTORY
+# =========================
+
+SCENARIO_DIR="$BASE_DIR/scenarios"
+
+SCENARIO_BUILDER="$SCENARIO_DIR/scenario_builder.sh"
+
+# =========================
+# 🧠 AI PYTHON ENV
+# =========================
+
+AI_ENV="$HOME/nettool-env"
+AI_PYTHON="$AI_ENV/bin/python"
+
+# =========================
+# 📝 LOG DIRECTORY
+# =========================
+
+LOG_DIR="$BASE_DIR/logs"
+
+mkdir -p "$LOG_DIR"
+
+# =========================
+# 🔍 DEBUG
+# =========================
+
+echo "[DEBUG] BASE_DIR = $BASE_DIR"
+echo "[DEBUG] AI_DIR = $AI_DIR"
+echo "[DEBUG] AI_DETECT = $AI_DETECT"
+echo "[DEBUG] AI_TRAIN = $AI_TRAIN"
+echo "[DEBUG] SCENARIO_BUILDER = $SCENARIO_BUILDER"
+
+# =========================
+# ✅ VALIDATION
+# =========================
+
+if [ ! -f "$AI_DETECT" ]; then
+    echo "[!] ai_detect.py tidak ditemukan"
+fi
+
+if [ ! -f "$AI_TRAIN" ]; then
+    echo "[!] ai_train.py tidak ditemukan"
+fi
+
+if [ ! -f "$SCENARIO_BUILDER" ]; then
+    echo "[!] scenario_builder.sh tidak ditemukan"
+fi
+
+if [ ! -x "$AI_PYTHON" ]; then
+    echo "[!] Python AI environment tidak ditemukan"
+fi
 
 # =========================
 # ❤️ HEARTBEAT

@@ -475,7 +475,7 @@ fi
 # =========================
 
 if [ "$NETTOOL_MODE" = "NORMAL" ]; then
-
+  
   # =========================
   # DOWNLOAD MAIN NETTOOL
   # =========================
@@ -500,7 +500,7 @@ if [ "$NETTOOL_MODE" = "NORMAL" ]; then
   progress_bar 1 4 "Downloading AI Detect"
 
   curl -sSL \
-  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/ai/ai_detect.py \
+  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/ai_detect.py \
   -o "$HOME/.nettool/ai/ai_detect.py" || {
     fail "Failed to download ai_detect.py"
     exit 1
@@ -515,7 +515,7 @@ if [ "$NETTOOL_MODE" = "NORMAL" ]; then
   progress_bar 2 4 "Downloading Trainer"
 
   curl -sSL \
-  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/ai/train.py \
+  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/ai/train.py \
   -o "$HOME/.nettool/ai/train.py" || {
     fail "Failed to download train.py"
     exit 1
@@ -530,7 +530,7 @@ if [ "$NETTOOL_MODE" = "NORMAL" ]; then
   progress_bar 3 4 "Downloading Scenario Builder"
 
   curl -sSL \
-  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/scenario/scenario_builder.sh \
+  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/scenario/scenario_builder.sh \
   -o "$HOME/.nettool/scenarios/scenario_builder.sh" || {
     fail "Failed to download scenario_builder.sh"
     exit 1
