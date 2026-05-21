@@ -547,34 +547,6 @@ if [ "$NETTOOL_MODE" = "NORMAL" ]; then
 progress_bar 4 4 "Finalizing AI modules"
 
 ok "AI modules installed"
-  # =========================
-  # DOWNLOAD AI FILES
-  # =========================
-
-  info "Downloading AI backend files"
-
-  sudo mkdir -p /usr/local/share/nettool
-
-  # ai_detect.py
-  wget -q -O /tmp/ai_detect.py "$BASE_URL/ai_detect.py" || {
-    fail "Failed to download ai_detect.py"
-    exit 1
-  }
-
-  # ai_train.py
-  wget -q -O /tmp/ai_train.py "$BASE_URL/ai_train.py" || {
-    fail "Failed to download ai_train.py"
-    exit 1
-  }
-
-  # move files
-  sudo mv /tmp/ai_detect.py /usr/local/share/nettool/ai_detect.py
-  sudo mv /tmp/ai_train.py /usr/local/share/nettool/ai_train.py
-
-  sudo chmod +x /usr/local/share/nettool/ai_detect.py
-  sudo chmod +x /usr/local/share/nettool/ai_train.py
-
-  ok "AI backend files installed"
 
 fi
 

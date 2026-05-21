@@ -26,7 +26,7 @@ RETURN_TO_MAIN=0
 CRASH_FLAG=0
 SCENARIO_MODE=0
 SCENARIO_DEPTH=0
-BASE_DIR="$HOME/nettools"
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # =========================
 # ❤️ HEARTBEAT
