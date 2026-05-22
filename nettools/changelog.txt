@@ -1,4 +1,19 @@
-- Sistem auto update ditambahkan
-- Perbaikan recovery mode
-- Optimasi AI tools
-- Perbaikan bug kecil
+v2.5.0 - NetTools Update
+
+==================================
+📅 Released: Friday, 22 May 2026
+==================================
+
+✨ Fitur Baru
+
+- Penambahan integrasi LLM pada sistem utama NetTools
+- Penambahan 2 menu baru: AI Chat dan AI Scenario Execution
+
+📊 Peningkatan
+
+- Peningkatan keterbacaan output agar lebih mudah dipahami oleh pengguna pemula
+- Penambahan sistem EO (Easier Output) untuk meningkatkan kenyamanan penggunaan dan navigasi menu
+
+🛠 Perbaikan
+
+- Perbaikan bug minor pada beberapa modul dan alur command system

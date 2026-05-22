@@ -29,6 +29,33 @@ SCENARIO_MODE=0
 SCENARIO_DEPTH=0
 
 # =========================
+# 🧾 EASY OUTPUT SYSTEM
+# =========================
+
+print_section() {
+  echo ""
+  echo "=============================="
+  echo "$1"
+  echo "=============================="
+}
+
+print_keyval() {
+  printf "%-15s : %s\n" "$1" "$2"
+}
+
+print_success() {
+  echo "[✔] $1"
+}
+
+print_error() {
+  echo "[!] $1"
+}
+
+print_info() {
+  echo "[~] $1"
+}
+
+# =========================
 # 📁 NETTOOLS BASE DIRECTORY
 # =========================
 
@@ -706,31 +733,92 @@ log_save() {
 # =========================
 
 cmd_lihat_ip() {
-  ip -brief address
+
+  clear
+  
+  print_section "NETWORK INTERFACE STATUS"
+
+  ip -brief address | while read -r line; do
+    iface=$(echo "$line" | awk '{print $1}')
+    state=$(echo "$line" | awk '{print $2}')
+    ipaddr=$(echo "$line" | awk '{print $3}')
+
+    print_keyval "Interface" "$iface"
+    print_keyval "Status" "$state"
+    print_keyval "IP" "${ipaddr:-NONE}"
+    echo ""
+  done
+  
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_scan_jaringan() {
   init_storage
+
   if ! command -v nmap >/dev/null 2>&1; then
-    echo "[!] nmap belum terinstall"
+    print_error "nmap belum terinstall"
     return
   fi
+
   ipku=$(ip route get 8.8.8.8 | awk '{print $7}')
   net=$(echo "$ipku" | cut -d '.' -f1-3).0/24
-  nmap -sn "$net"
+
+  clear
+
+  print_section "NETWORK SCAN"
+  print_keyval "Subnet" "$net"
+  echo ""
+
+  print_info "Scanning network... tunggu sebentar"
+  echo ""
+
+  # langsung tampilkan hasil dulu (debug aman)
+  nmap -sn "$net" | awk '
+    /Nmap scan report/ {print "\n- " $NF}
+    /MAC Address/ {print "  MAC: " $0}
+  '
+
+  echo ""
+  
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_ping_ip() {
   init_storage
+
   read -p "Target IP: " target
-  ping -c 4 "$target"
+
+  if [ -z "$target" ]; then
+    print_error "Target kosong"
+    return
+  fi
+
+  print_section "PING TEST"
+  print_keyval "Target" "$target"
+  echo ""
+
+  result=$(ping -c 4 "$target")
+
+  loss=$(echo "$result" | grep -oP '\d+(?=% packet loss)')
+  avg=$(echo "$result" | grep -oP 'rtt .* = .*\/\K[0-9.]+')
+
+  if [[ "$loss" == "0" ]]; then
+    print_success "HOST ONLINE"
+  else
+    print_error "PACKET LOSS: $loss%"
+  fi
+
+  print_keyval "Avg Latency" "${avg:-unknown} ms"
+  
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_set_ip_manual() {
   if ! command -v nmcli >/dev/null 2>&1; then
-    echo "[!] nmcli tidak tersedia di sistem ini"
+    print_error "nmcli tidak tersedia di sistem ini"
     return
   fi
+
   koneksi=$(nmcli -t -f NAME,DEVICE con show --active | grep -E "wlp|eno|eth" | head -n 1 | cut -d: -f1)
 
   read -p "IP (contoh 192.168.1.10/24): " ipbaru
@@ -740,68 +828,153 @@ cmd_set_ip_manual() {
   nmcli con mod "$koneksi" ipv4.gateway "$gateway"
   nmcli con mod "$koneksi" ipv4.method manual
   nmcli con up "$koneksi"
+
+  print_section "IP CONFIGURATION"
+  print_success "IP berhasil diubah"
+  print_keyval "Interface" "$koneksi"
+  print_keyval "IP Baru" "$ipbaru"
+  print_keyval "Gateway" "$gateway"
+  
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_routing() {
-  ip route
-  echo ""
-  echo "[~] Gateway:"
-  ip route | grep default
+  print_section "ROUTING INFORMATION"
+
+  gateway=$(ip route | grep default | awk '{print $3}')
+  iface=$(ip route | grep default | awk '{print $5}')
+
+  print_keyval "Default Gateway" "$gateway"
+  print_keyval "Active Interface" "$iface"
 
   echo ""
-  echo "[~] Interface Aktif:"
-  ip -brief address | grep UP
+  echo "ROUTES:"
+
+  ip route | grep -v default | while read -r line; do
+    echo "- $line"
+  done
+  
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_dns_check() {
-  echo "[~] DNS Aktif:"
-  resolvectl status | grep "DNS Servers" -A2
+  print_section "DNS STATUS"
+
+  dns=$(resolvectl status 2>/dev/null | grep "DNS Servers" -A2)
+
+  if [ -z "$dns" ]; then
+    print_error "DNS tidak terbaca"
+    return
+  fi
+
+  echo "$dns" | while read -r line; do
+    echo "- $line"
+  done
+  
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_internet_check() {
-  ping -c 2 8.8.8.8
+  print_section "INTERNET TEST"
+
+  echo "[~] Testing connection to 8.8.8.8..."
+
+  result=$(ping -c 2 8.8.8.8)
+
+  loss=$(echo "$result" | grep -oP '\d+(?=% packet loss)')
+  avg=$(echo "$result" | grep -oP 'rtt .* = .*\/\K[0-9.]+')
+
+  if [[ "$loss" == "0" ]]; then
+    print_success "INTERNET CONNECTED"
+  else
+    print_error "PACKET LOSS: $loss%"
+  fi
+
+  print_keyval "Latency" "${avg:-unknown} ms"
+  
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_scan_ssh() {
   if ! command -v nmap >/dev/null 2>&1; then
-    echo "[!] nmap belum terinstall"
+    print_error "nmap belum terinstall"
     return
   fi
+
   ipku=$(ip route get 8.8.8.8 | awk '{print $7}')
   net=$(echo "$ipku" | cut -d '.' -f1-3).0/24
-  nmap -p 22 --open "$net"
+
+  print_section "SSH SCAN"
+  print_keyval "Subnet" "$net"
+  echo ""
+
+  echo "[~] Searching SSH devices (port 22)..."
+  echo ""
+
+  nmap -p 22 --open "$net" | awk '
+    /Nmap scan report/ {print "- " $NF}
+  '
+  
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_ssh_connect() {
   read -p "Target IP: " target
   read -p "User: " user
+
+  print_section "SSH CONNECTION"
+
+  if [ -z "$target" ] || [ -z "$user" ]; then
+    print_error "Input tidak lengkap"
+    return
+  fi
+
+  print_keyval "Target" "$target"
+  print_keyval "User" "$user"
+  echo ""
+
   ssh "$user@$target"
+  
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_reset_ip() {
   if ! command -v nmcli >/dev/null 2>&1; then
-    echo "[!] nmcli tidak tersedia di sistem ini"
+    print_error "nmcli tidak tersedia"
     return
   fi
-  echo "[~] Reset IP ke otomatis (DHCP)..."
+
+  print_section "NETWORK RESET"
 
   koneksi=$(nmcli -t -f NAME,DEVICE con show --active | grep -E "wlp|eth|eno" | head -n 1 | cut -d: -f1)
 
   if [ -z "$koneksi" ]; then
-    echo "[!] Tidak ada koneksi aktif"
-  else
-    echo "[~] Koneksi: $koneksi"
-
-    sudo nmcli con mod "$koneksi" ipv4.method auto
-    sudo nmcli con mod "$koneksi" ipv4.addresses ""
-    sudo nmcli con mod "$koneksi" ipv4.gateway ""
-    sudo nmcli con mod "$koneksi" ipv4.dns ""
-
-    sudo nmcli con down "$koneksi"
-    sudo nmcli con up "$koneksi"
-
-    echo "[✔] IP berhasil di reset"
+    print_error "Tidak ada koneksi aktif"
+    return
   fi
+
+  print_keyval "Interface" "$koneksi"
+  echo ""
+
+  echo "[~] Switching to DHCP mode..."
+
+  sudo nmcli con mod "$koneksi" ipv4.method auto
+  sudo nmcli con mod "$koneksi" ipv4.addresses ""
+  sudo nmcli con mod "$koneksi" ipv4.gateway ""
+  sudo nmcli con mod "$koneksi" ipv4.dns ""
+
+  sudo nmcli con down "$koneksi"
+  sudo nmcli con up "$koneksi"
+
+  print_success "IP RESET SUCCESS"
+  
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 # =========================
@@ -810,40 +983,105 @@ cmd_reset_ip() {
 
 cmd_tcp_scan_port() {
   init_storage
+  clear
+
   read -p "Target: " t
+
+  print_section "TCP FULL SCAN"
+  print_keyval "Target" "$t"
+  echo ""
+
   nmap -sT "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_tcp_service_detection() {
   init_storage
+  clear
+
   read -p "Target: " t
+
+  print_section "SERVICE DETECTION"
+  print_keyval "Target" "$t"
+  echo "[~] Scanning services..."
+  echo ""
+
   nmap -sV "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_tcp_range_scan() {
   init_storage
+  clear
+
   read -p "Target: " t
+
+  print_section "PORT RANGE SCAN"
+  print_keyval "Target" "$t"
+  print_keyval "Range" "1-1000"
+  echo ""
+
   nmap -p 1-1000 "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_tcp_specific_port() {
   init_storage
+  clear
+
   read -p "Target: " t
   read -p "Port: " p
+
+  print_section "PORT CHECK"
+  print_keyval "Target" "$t"
+  print_keyval "Port" "$p"
+  echo ""
+
   nmap -p "$p" "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_tcp_local_ports() {
+  clear
+
+  print_section "LOCAL OPEN PORTS"
+  echo ""
+
   ss -tuln
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_tcp_banner_grab() {
+  clear
+
   if ! command -v nc >/dev/null 2>&1; then
-    echo "[!] netcat tidak tersedia"
+    print_error "netcat tidak tersedia"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
+
   read -p "Target: " t
+
+  print_section "BANNER GRAB"
+  print_keyval "Target" "$t"
+  print_keyval "Port" "80"
+  echo ""
+
   nc -w 3 "$t" 80
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 # =========================
@@ -851,49 +1089,87 @@ cmd_tcp_banner_grab() {
 # =========================
 
 cmd_storage_local() {
+  clear
+
   storage_mode="local"
   storage_path="$HOME/nettools_logs"
   mkdir -p "$storage_path"
-  echo "Local active"
+
+  echo "[✔] Local Storage Active"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_storage_usb() {
+  clear
+
   if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
     echo "[!] USB belum dipilih"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
+
   storage_mode="usb"
   storage_path="$USB_PATH/NETTOOLS"
   mkdir -p "$storage_path"
-  echo "USB active"
+
+  echo ""
+  echo "[✔] USB Storage Active"
+  echo "[~] Path: $storage_path"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_storage_install() {
-  read -p "Install apa? (contoh: nmap): " pkg
+  clear
 
+  read -p "Install apa? (contoh: nmap): " pkg
+  
+  echo ""
+  
   if [ -z "$pkg" ]; then
     echo "[!] Tidak ada input"
-  else
-    sudo apt update -y >/dev/null 2>&1
-    sudo apt install -y "$pkg"
 
-    if [ $? -eq 0 ]; then
-      echo "[✔] Install berhasil"
-      log_save "Install $pkg"
-    else
-      echo "[!] Install gagal"
-    fi
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
   fi
+
+  echo "[~] Installing: $pkg"
+  sudo apt update -y >/dev/null 2>&1
+  sudo apt install -y "$pkg"
+
+  if [ $? -eq 0 ]; then
+    echo "[✔] Installed: $pkg"
+    log_save "Install $pkg"
+  else
+    echo "[!] Install gagal: $pkg"
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_storage_save_log() {
+  clear
 
   init_storage
+
+  echo "========================="
+  echo " SAVE LOG"
+  echo "========================="
 
   read -p "Ketik YES untuk save log: " confirm
 
   if [ "$confirm" != "YES" ]; then
     echo "[x] Dibatalkan"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
@@ -901,15 +1177,24 @@ cmd_storage_save_log() {
 
   if [ ! -f "$LOG_SRC" ]; then
     echo "[!] Log file belum ada"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
   if [ ! -w "$storage_path" ]; then
     echo "[!] Storage tidak writable"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
   cp "$LOG_SRC" "$storage_path/" && echo "[✔] Log berhasil disimpan"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 # =========================
@@ -917,80 +1202,137 @@ cmd_storage_save_log() {
 # =========================
 
 cmd_usb_detect() {
+  clear
+
+  echo ""
+
   echo "[~] Available USB devices:"
+  echo ""
+
   lsblk -o NAME,SIZE,MOUNTPOINT | grep "/media\|/run/media"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_usb_select() {
+  clear
+
+  echo ""
 
   echo "[~] Select USB:"
   lsblk -o NAME,SIZE,MOUNTPOINT | grep "/media\|/run/media"
+  echo ""
 
   read -p "Paste mount path USB: " input
 
-  # basic normalize
   input="${input%/}"
 
   if [[ "$input" == /media/* || "$input" == /run/media/* ]]; then
     if [ -d "$input" ]; then
       USB_PATH="$input"
       USB_SELECTED=1
-      echo "[✔] USB selected: $USB_PATH"
+
+      echo ""
+      echo "[✔] USB selected"
+      echo "[~] Path: $USB_PATH"
     else
       echo "[!] Path tidak ada"
+      USB_SELECTED=0
     fi
   else
     echo "[!] Invalid USB path"
     USB_SELECTED=0
   fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_usb_workspace() {
+  clear
+
+  echo ""
+
   if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
     echo "[!] USB belum dipilih"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
+
   mkdir -p "$USB_PATH/NETTOOLS/logs"
   mkdir -p "$USB_PATH/NETTOOLS/reports"
+
   echo "[✔] Workspace created"
+  echo "[~] NETTOOLS directory ready"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_usb_read() {
+  clear
+
+  echo ""
+
   if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
     echo "[!] USB belum dipilih"
   else
+    echo "[~] Reading USB structure:"
+    echo ""
     ls -R "$USB_PATH"
   fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_usb_delete() {
+  clear
+
+  echo ""
+
   if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
     echo "[!] No USB selected"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
   echo "[!] Deleting: $USB_PATH/*"
+  echo "[⚠] This action cannot be undone"
+  echo ""
+
   read -p "Type YES to confirm: " confirm
 
   [ "$confirm" != "YES" ] && return
 
-  # HARD SAFETY CHECK
   if [[ "$USB_PATH" != /media/* && "$USB_PATH" != /run/media/* ]]; then
     echo "[!] BLOCKED: not a real USB mount"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
   if [ ! -d "$USB_PATH" ]; then
     echo "[!] Invalid path"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
-  # SAFE DELETE (FIXED)
   find "$USB_PATH" -mindepth 1 -maxdepth 5 -exec rm -rf {} \;
-
   sync
 
-  echo "[✔] Deleted safely"
+  echo "[✔] USB cleaned successfully"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 # =========================
@@ -998,259 +1340,171 @@ cmd_usb_delete() {
 # =========================
 
 cmd_ai_webcam_all() {
+  clear
+  echo "========================="
+  echo "[ AI - WEBCAM ALL ]"
+  echo "========================="
+
   init_storage
-  echo "[~] AI Webcam All"
-
   mkdir -p "$storage_path/captures"
-
-  if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python env tidak siap"
-    return
-  fi
-
-  if [ ! -f "$AI_DETECT" ]; then
-    echo "[!] ai_detect.py tidak ditemukan"
-    return
-  fi
 
   safe_ai 0 "$PYTHON" "$AI_DETECT" 0 "$storage_path/captures" all
 
   log_save "AI Webcam All"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
 }
 
 cmd_ai_webcam_person() {
+  clear
+  echo "========================="
+  echo "[ AI - WEBCAM PERSON ]"
+  echo "========================="
+
   init_storage
-  echo "[~] AI Webcam Person"
-
   mkdir -p "$storage_path/captures"
-
-  if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python env tidak siap"
-    return
-  fi
-
-  if [ ! -f "$AI_DETECT" ]; then
-    echo "[!] ai_detect.py tidak ditemukan"
-    return
-  fi
 
   safe_ai 0 "$PYTHON" "$AI_DETECT" 0 "$storage_path/captures" person
 
   log_save "AI Webcam Person"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
 }
 
 cmd_ai_rtsp() {
+  clear
+  echo "========================="
+  echo "[ AI - RTSP ]"
+  echo "========================="
+
   init_storage
   read -p "RTSP URL: " rtsp
 
   mkdir -p "$storage_path/captures"
 
-  if [ -z "$rtsp" ] || [[ ! "$rtsp" =~ ^rtsp:// ]]; then
-    echo "[!] RTSP tidak valid"
-    return
-  fi
-
-  if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python env tidak siap"
-    return
-  fi
-
-  if [ ! -f "$AI_DETECT" ]; then
-    echo "[!] ai_detect.py tidak ditemukan"
-    return
-  fi
-
   safe_ai 0 "$PYTHON" "$AI_DETECT" "$rtsp" "$storage_path/captures" all
 
   log_save "AI CCTV RTSP"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
 }
 
 cmd_ai_image() {
+  clear
+  echo "========================="
+  echo "[ AI - IMAGE ]"
+  echo "========================="
+
   init_storage
   read -p "Image path: " img
 
   mkdir -p "$storage_path/captures"
 
-  if [ ! -f "$img" ]; then
-    echo "[!] File tidak ditemukan"
-    return
-  fi
-
-  if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python env tidak siap"
-    return
-  fi
-
-  if [ ! -f "$AI_DETECT" ]; then
-    echo "[!] ai_detect.py tidak ditemukan"
-    return
-  fi
-
   safe_ai 120 "$PYTHON" "$AI_DETECT" "$img" "$storage_path/captures" all
 
   log_save "AI Image Detect"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
 }
 
 cmd_ai_video() {
+  clear
+  echo "========================="
+  echo "[ AI - VIDEO ]"
+  echo "========================="
+
   init_storage
   read -p "Video path: " vid
 
   mkdir -p "$storage_path/captures"
 
-  if [ ! -f "$vid" ]; then
-    echo "[!] File tidak ditemukan"
-    return
-  fi
-
-  if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python env tidak siap"
-    return
-  fi
-
-  if [ ! -f "$AI_DETECT" ]; then
-    echo "[!] ai_detect.py tidak ditemukan"
-    return
-  fi
-
   safe_ai 120 "$PYTHON" "$AI_DETECT" "$vid" "$storage_path/captures" all
 
   log_save "AI Video Detect"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
 }
 
 cmd_ai_train() {
+  clear
+  echo "========================="
+  echo "[ AI - TRAIN ]"
+  echo "========================="
+
   init_storage
   echo "[~] Mencari data.yaml..."
-
-  mkdir -p "$storage_path/captures"
-
-  if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python env tidak siap"
-    return
-  fi
-
-  if [ ! -f "$AI_TRAIN" ]; then
-    echo "[!] ai_train.py tidak ditemukan"
-    return
-  fi
-
-  if ! command -v dialog >/dev/null 2>&1; then
-    echo "[!] dialog belum terinstall"
-    return
-  fi
 
   mapfile -t files < <(find "$BASE_DIR" -maxdepth 5 -type f -name "data.yaml")
 
   if [ ${#files[@]} -eq 0 ]; then
     echo "[!] Tidak ditemukan data.yaml"
+    echo ""
+    read -p "Tekan ENTER untuk kembali"
     return
   fi
-
-  options=()
 
   for i in "${!files[@]}"; do
-    options+=("$i" "${files[$i]}")
+    echo "$i) ${files[$i]}"
   done
 
-  choice=$(dialog --menu "Pilih data.yaml:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
-
-  if [ -z "$choice" ] || ! [[ "$choice" =~ ^[0-9]+$ ]]; then
-    echo "[!] Invalid selection"
-    return
-  fi
-
-  if [ -z "${files[$choice]}" ]; then
-    echo "[!] Data tidak valid"
-    return
-  fi
-
+  read -p "Pilih index: " choice
   data="${files[$choice]}"
 
-  echo "[!] Kamu pilih: $data"
-
-  read -p "Ketik YES untuk training: " confirm
-
-  if [ "$confirm" != "YES" ]; then
-    echo "[x] Dibatalkan"
-    return
-  fi
+  read -p "YES untuk training: " confirm
+  [ "$confirm" != "YES" ] && return
 
   safe_ai 60 "$PYTHON" "$AI_TRAIN" "$data"
 
   log_save "Custom AI Training"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
 }
 
 cmd_ai_run() {
+  clear
+  echo "========================="
+  echo "[ AI - RUN ]"
+  echo "========================="
+
   init_storage
-  echo "[~] Pilih model folder..."
-
-  mkdir -p "$storage_path/captures"
-
-  if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python env tidak siap"
-    return
-  fi
-
-  if [ ! -f "$AI_DETECT" ]; then
-    echo "[!] ai_detect.py tidak ditemukan"
-    return
-  fi
-
-  if ! command -v dialog >/dev/null 2>&1; then
-    echo "[!] dialog belum terinstall"
-    return
-  fi
-
   mapfile -t models < <(find "$BASE_DIR" -maxdepth 4 -type f -name "best.pt")
 
   if [ ${#models[@]} -eq 0 ]; then
     echo "[!] Tidak ada model"
+    echo ""
+    read -p "Tekan ENTER untuk kembali"
     return
   fi
-
-  options=()
 
   for i in "${!models[@]}"; do
-    options+=("$i" "${models[$i]}")
+    echo "$i) ${models[$i]}"
   done
 
-  choice=$(dialog --menu "Pilih model:" 20 80 10 "${options[@]}" 2>&1 >/dev/tty)
-
-  if [ -z "$choice" ]; then
-    echo "[!] Dibatalkan user"
-    return
-  fi
-
-  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
-    echo "[!] Invalid selection"
-    return
-  fi
-
-  model="${models[$choice]}"
-
-  if [ ! -f "$model" ]; then
-    echo "[!] Model tidak valid"
-    return
-  fi
+  read -p "Model index: " m
+  model="${models[$m]}"
 
   echo "1. Webcam"
   echo "2. RTSP"
-
   read -p "Pilih: " mode
 
-  if [ "$mode" = "1" ]; then
-    src=0
-  else
+  if [ "$mode" = "2" ]; then
     read -p "RTSP URL: " src
-
-    if [[ -z "$src" || ! "$src" =~ ^rtsp:// ]]; then
-      echo "[!] RTSP tidak valid"
-      return
-    fi
+  else
+    src=0
   fi
 
   safe_ai 60 "$PYTHON" "$AI_DETECT" "$src" "$storage_path/captures" all "$model"
 
   log_save "Custom AI Run"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
 }
 
 # =========================
@@ -1394,13 +1648,20 @@ cmd_ai_chat_start() {
 }
 
 cmd_ai_download_model() {
+  clear
 
   if ! command -v ollama >/dev/null 2>&1; then
     echo "[!] Ollama belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
+  echo "========================="
+  echo "  DOWNLOAD AI MODEL"
+  echo "========================="
   echo ""
+
   echo "Example Models:"
   echo "- tinyllama"
   echo "- phi3"
@@ -1410,12 +1671,14 @@ cmd_ai_download_model() {
 
   IFS= read -r -p "Model name: " model
 
-  [ -z "$model" ] && return
+  if [ -z "$model" ]; then
+    echo "[x] Dibatalkan"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
 
   echo ""
-  echo "[~] Downloading model..."
-  echo ""
-
   echo "[~] Downloading model: $model"
   echo ""
 
@@ -1424,108 +1687,147 @@ cmd_ai_download_model() {
   ollama pull "$model"
 
   if [ $? -eq 0 ]; then
+    echo ""
     echo "[✔] Model downloaded"
   else
+    echo ""
     echo "[!] Failed download model"
   fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_ai_list_models() {
+  clear
 
   if ! command -v ollama >/dev/null 2>&1; then
     echo "[!] Ollama belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
-  echo ""
   echo "========================="
   echo " INSTALLED MODELS"
   echo "========================="
+  echo ""
 
   ollama list
 
   echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_ai_delete_model() {
+  clear
 
   if ! command -v ollama >/dev/null 2>&1; then
     echo "[!] Ollama belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
+  echo "========================="
+  echo "  DELETE AI MODEL"
+  echo "========================="
   echo ""
-  echo "[~] Installed Models:"
-  ollama list
 
+  ollama list
   echo ""
+
   IFS= read -r -p "Model to delete: " model
 
-  [ -z "$model" ] && return
+  if [ -z "$model" ]; then
+    echo "[x] Dibatalkan"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
 
-  echo ""
   IFS= read -r -p "Type YES to confirm: " confirm
 
-  [ "$confirm" != "YES" ] && return
+  if [ "$confirm" != "YES" ]; then
+    echo "[x] Cancelled"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
 
   log_save "Delete AI Model: $model"
 
   ollama rm "$model"
 
   if [ $? -eq 0 ]; then
+    echo ""
     echo "[✔] Model deleted"
   else
+    echo ""
     echo "[!] Failed delete model"
   fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_ai_history() {
+  clear
 
   history_dir="$AI_HISTORY_DIR"
-
   mkdir -p "$history_dir"
 
   shopt -s nullglob
   mapfile -t files < <(ls -t "$history_dir"/*.txt 2>/dev/null)
   shopt -u nullglob
 
-  if [ ${#files[@]} -eq 0 ]; then
-    echo "[!] Tidak ada AI history"
-    return
-  fi
-
-  echo ""
   echo "========================="
   echo "      AI HISTORY"
   echo "========================="
+  echo ""
+
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "[!] Tidak ada AI history"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
 
   for i in "${!files[@]}"; do
     echo "$i. $(basename "${files[$i]}")"
   done
 
   echo ""
-
   IFS= read -r -p "Pilih file: " pilih
 
-  [ -z "${files[$pilih]}" ] && return
+  if [ -z "${files[$pilih]}" ]; then
+    echo "[!] Invalid selection"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
 
   echo ""
   cat "${files[$pilih]}"
 
   echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_ai_status() {
+  clear
 
-  echo ""
   echo "========================="
   echo "       AI STATUS"
   echo "========================="
+  echo ""
 
   if command -v ollama >/dev/null 2>&1; then
     echo "[✔] Ollama Installed"
   else
     echo "[!] Ollama Not Installed"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
     return
   fi
 
@@ -1548,7 +1850,7 @@ cmd_ai_status() {
   echo ""
   echo "[~] AI Storage:"
   du -sh "$HOME/.ollama" 2>/dev/null
-  
+
   echo ""
   echo "[~] Default Model:"
   echo "$AI_MODEL_DEFAULT"
@@ -1558,22 +1860,37 @@ cmd_ai_status() {
   du -sh "$AI_HISTORY_DIR" 2>/dev/null
 
   echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 cmd_ai_clear_history() {
+  clear
 
   history_dir="$AI_HISTORY_DIR"
-
   mkdir -p "$history_dir"
 
+  echo "========================="
+  echo "  CLEAR AI HISTORY"
+  echo "========================="
   echo ""
+
   IFS= read -r -p "Type YES to clear history: " confirm
 
-  [ "$confirm" != "YES" ] && return
+  if [ "$confirm" != "YES" ]; then
+    echo ""
+    echo "[x] Dibatalkan"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
 
   find "$history_dir" -type f -name "*.txt" -delete
 
+  echo ""
   echo "[✔] AI history cleared"
+  echo ""
+
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 # =========================
@@ -1680,6 +1997,9 @@ run_scenario_file() {
 
   echo "[✔] Scenario selesai"
   return 0
+  
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
 }
 
 # =========================
