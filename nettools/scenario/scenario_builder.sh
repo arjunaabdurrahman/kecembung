@@ -128,12 +128,12 @@ while true; do
 
       if [ -z "$scen_name" ]; then
         echo -e "${RED}[!] Nama tidak boleh kosong${NC}"
-        return
+        continue
       fi
 
       if [[ "$scen_name" =~ [[:space:]] ]]; then
         echo -e "${RED}[!] Tidak boleh pakai spasi, gunakan _${NC}"
-        return
+        continue
       fi
 
       FILE="$SCENARIO_DIR/${scen_name}.sh"
@@ -167,19 +167,25 @@ while true; do
     # =========================
     2)
       echo -e "${CYAN}=========================${NC}"
-      read -p "👉 Nama scenario (tanpa spasi, pakai _): " scen_name
+      IFS= read -r -p "👉 Nama scenario (tanpa spasi, pakai _): " scenario_name
 
-      if [ -z "$name" ]; then
-        echo "[!] Nama tidak boleh kosong"
-        continue
+      scenario_name=$(echo "$scenario_name" | xargs)
+
+      if [ -z "$scenario_name" ]; then
+          echo "[!] Nama tidak boleh kosong"
+    	  continue
       fi
 
-      if [[ "$scen_name" =~ [[:space:]] ]]; then
+      if [[ ! "$scenario_name" =~ ^[a-zA-Z0-9_]+$ ]]; then
+    	  echo "[!] Nama hanya boleh huruf, angka, dan underscore (_)"
+    	  continue
+      fi
+
+      if [[ "$scenario_name" =~ [[:space:]] ]]; then
         echo -e "${RED}[!] Tidak boleh pakai spasi, gunakan _${NC}"
-        return
       fi
 
-      FILE="$SCENARIO_DIR/${scen_name}.sh"
+      FILE="$SCENARIO_DIR/${scenario_name}.sh"
       > "$FILE"
 
       echo -e "${CYAN}=========================${NC}"
@@ -227,7 +233,7 @@ while true; do
       if [ ! -e "${files[0]}" ]; then
         echo -e "${RED}[!] Tidak ada scenario${NC}"
         read -p "ENTER untuk kembali..."
-        return
+        continue
       fi
 
       for i in "${!files[@]}"; do
@@ -242,7 +248,6 @@ while true; do
       if [ -z "$target" ] || [ ! -f "$target" ]; then
         echo -e "${RED}[!] Pilihan tidak valid${NC}"
         read -p "ENTER untuk kembali..."
-        return
       fi
 
       echo -e "${RED}[!] Akan menghapus: $(basename "$target")${NC}"
