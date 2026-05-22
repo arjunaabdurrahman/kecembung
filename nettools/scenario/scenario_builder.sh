@@ -19,6 +19,50 @@ mkdir -p "$SCENARIO_DIR"
 # =========================
 # 📦 LABEL (USER VIEW)
 # =========================
+
+# =========================
+# 📂 CATEGORY
+# =========================
+
+categories=(
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+"IP TOOLS"
+
+"TCP TOOLS"
+"TCP TOOLS"
+"TCP TOOLS"
+"TCP TOOLS"
+"TCP TOOLS"
+"TCP TOOLS"
+
+"AI TOOLS"
+"AI TOOLS"
+"AI TOOLS"
+"AI TOOLS"
+"AI TOOLS"
+"AI TOOLS"
+"AI TOOLS"
+
+"STORAGE"
+"STORAGE"
+"STORAGE"
+"STORAGE"
+
+"USB TOOLS"
+"USB TOOLS"
+"USB TOOLS"
+"USB TOOLS"
+"USB TOOLS"
+)
+
 labels=(
 "Lihat IP"
 "Scan Jaringan"
@@ -101,6 +145,60 @@ cmd_usb_delete
 )
 
 # =========================
+# 🧠 AI SCENARIO PROMPT
+# =========================
+
+AI_SCENARIO_PROMPT="
+Kamu adalah generator NETTOOLS scenario.
+
+Tugas:
+- ubah request user menjadi daftar command NETTOOLS
+- output HANYA command
+- satu command per baris
+- jangan jelaskan apapun
+- jangan gunakan command selain whitelist
+
+Whitelist command:
+
+cmd_lihat_ip
+cmd_scan_jaringan
+cmd_ping_ip
+cmd_set_ip_manual
+cmd_routing
+cmd_dns_check
+cmd_internet_check
+cmd_scan_ssh
+cmd_ssh_connect
+cmd_reset_ip
+
+cmd_tcp_scan_port
+cmd_tcp_service_detection
+cmd_tcp_range_scan
+cmd_tcp_specific_port
+cmd_tcp_local_ports
+cmd_tcp_banner_grab
+
+cmd_ai_webcam_all
+cmd_ai_webcam_person
+cmd_ai_rtsp
+cmd_ai_image
+cmd_ai_video
+cmd_ai_train
+cmd_ai_run
+
+cmd_storage_local
+cmd_storage_usb
+cmd_storage_install
+cmd_storage_save_log
+
+cmd_usb_detect
+cmd_usb_select
+cmd_usb_workspace
+cmd_usb_read
+cmd_usb_delete
+"
+
+# =========================
 # 🚀 MAIN LOOP
 # =========================
 while true; do
@@ -111,8 +209,9 @@ while true; do
   echo -e "${CYAN}=========================${NC}"
   echo "1. Custom (manual input)"
   echo "2. From Nettool (select list)"
-  echo "3. Delete Scenario"
-  echo "4. Back"
+  echo "3. AI Scenario"
+  echo "4. Delete Scenario"
+  echo "5. Back"
   echo -e "${CYAN}=========================${NC}"
 
   read -p "Select mode: " mode
@@ -192,7 +291,18 @@ while true; do
       echo -e "${GREEN} NETTOOL COMMAND LIST${NC}"
       echo -e "${CYAN}=========================${NC}"
 
+      last_category=""
+
       for i in "${!commands[@]}"; do
+
+        current_category="${categories[$i]}"
+
+        if [ "$current_category" != "$last_category" ]; then
+          echo ""
+          echo -e "${CYAN}[$current_category]${NC}"
+          last_category="$current_category"
+        fi
+
         echo -e "${YELLOW}$i${NC}. ${labels[$i]}"
       done
 
@@ -211,7 +321,12 @@ while true; do
           label="${labels[$num]}"
 
           if [ -n "$cmd" ]; then
-            echo "$cmd" >> "$FILE"
+            if grep -qx "$cmd" "$FILE" 2>/dev/null; then
+              echo -e "${YELLOW}[!] already added: $label${NC}"
+            else
+              echo "$cmd" >> "$FILE"
+              echo -e "${GREEN}[✔] added: $label${NC}"
+            fi
             echo -e "${GREEN}[✔] added: $label${NC}"
           else
             echo -e "${RED}[X] invalid index: $num${NC}"
@@ -222,8 +337,83 @@ while true; do
       echo -e "${CYAN}[✔] saved: $FILE${NC}"
       read -p "ENTER..."
       ;;
-
+    
     3)
+
+      if ! command -v ollama >/dev/null 2>&1; then
+        echo "[!] Ollama belum terinstall"
+        read -p "ENTER..."
+        continue
+      fi
+
+      echo -e "${CYAN}=========================${NC}"
+      echo -e "${GREEN}      AI SCENARIO${NC}"
+      echo -e "${CYAN}=========================${NC}"
+
+      read -p "Nama scenario: " scenario_name
+
+      if [ -z "$scenario_name" ]; then
+        echo "[!] Nama tidak boleh kosong"
+        continue
+      fi
+
+      FILE="$SCENARIO_DIR/${scenario_name}.sh"
+
+      echo ""
+      read -p "Request AI: " user_prompt
+
+      [ -z "$user_prompt" ] && continue
+
+      FULL_PROMPT="$AI_SCENARIO_PROMPT
+
+USER REQUEST:
+$user_prompt
+
+OUTPUT:
+"
+
+      echo ""
+      echo "[~] AI generating scenario..."
+      echo ""
+
+      response=$(printf "%s" "$FULL_PROMPT" | ollama run phi3:mini 2>/dev/null)
+
+      if [ -z "$response" ]; then
+        echo "[!] AI gagal generate"
+        read -p "ENTER..."
+        continue
+      fi
+
+      echo ""
+      echo -e "${CYAN}Generated Scenario:${NC}"
+      echo ""
+
+      echo "$response"
+
+      echo ""
+      read -p "Save scenario? (YES): " confirm
+
+      [ "$confirm" != "YES" ] && continue
+
+      > "$FILE"
+
+      while IFS= read -r line; do
+
+        line=$(echo "$line" | xargs)
+
+        [[ ! "$line" =~ ^cmd_ ]] && continue
+
+        echo "$line" >> "$FILE"
+
+      done <<< "$response"
+
+      echo ""
+      echo "[✔] Scenario saved: $FILE"
+
+      read -p "ENTER..."
+      ;;
+    
+    4)
       echo -e "${CYAN}=========================${NC}"
       echo -e "${RED}   DELETE SCENARIO${NC}"
       echo -e "${CYAN}=========================${NC}"
@@ -266,7 +456,7 @@ while true; do
     # =========================
     # 🔙 BACK
     # =========================
-    4)
+    5)
       break
       ;;
 

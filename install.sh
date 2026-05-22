@@ -415,13 +415,30 @@ if [ "$NETTOOL_MODE" = "NORMAL" ]; then
 
   fi
 
-fi
+  # =========================
+  # 🧠 OLLAMA CHECK
+  # =========================
 
-if [ "$NETTOOL_MODE" = "NORMAL" ]; then
+  info "Checking Ollama..."
 
-  if ! command -v python3 >/dev/null 2>&1; then
-    fail "python3 not found"
-    exit 1
+  if command -v ollama >/dev/null 2>&1; then
+
+    ok "Ollama already installed"
+
+  else
+
+    warn "Ollama not found"
+    info "Installing Ollama..."
+
+    curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1
+
+    if [ $? -eq 0 ]; then
+      ok "Ollama installed"
+    else
+      fail "Failed to install Ollama"
+      exit 1
+    fi
+
   fi
 
 fi
@@ -706,3 +723,6 @@ echo -e "${GREEN}nettool${NC}"
 echo ""
 echo "Thank you for installing NETTOOLS V2.0.0"
 echo ""
+
+
+
