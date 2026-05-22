@@ -119,6 +119,7 @@ NETTOOL_DIR="$BASE_DIR"
 mkdir -p "$NETTOOL_DIR"
 
 HEARTBEAT_FILE="$NETTOOL_DIR/heartbeat"
+WATCHDOG_FILE="$NETTOOL_DIR/watchdog"
 
 write_heartbeat() {
     echo "$(date +%s)" > "$HEARTBEAT_FILE"
@@ -1274,10 +1275,14 @@ cmd_ai_chat_start() {
   
   [ -z "$model" ] && model="$AI_MODEL_DEFAULT"
   
-  if ! ollama list | awk '{print $1}' | grep -qx "$model"; then
+  real_model=$(ollama list | awk '{print $1}' | grep "^${model}\(:.*\)\?$" | head -n1)
+
+  if [ -z "$real_model" ]; then
       echo "[!] Model tidak ditemukan"
       return
   fi
+
+  model="$real_model"
 
   [ -z "$model" ] && return
   
@@ -1305,7 +1310,7 @@ cmd_ai_chat_start() {
   session_file="$AI_HISTORY_DIR/chat_$(date +%F_%H-%M-%S).txt"
 
   echo ""
-  echo "[~] Ketik 'exit' untuk keluar"
+  echo "[~] Ketik '/exit' untuk keluar"
   echo ""
   
   CHAT_CONTEXT="$SYSTEM_PROMPT"
