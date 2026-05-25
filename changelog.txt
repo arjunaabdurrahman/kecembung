@@ -17,3 +17,4 @@ v2.5.0 - NetTools Update
 🛠 Perbaikan
 
 - Perbaikan bug minor pada beberapa modul dan alur command system
+- Perbaikan bug UI/UX yang menganggu

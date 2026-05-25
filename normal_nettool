@@ -326,12 +326,20 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="1.0.0"
+CURRENT_VERSION="2.5.0"
+
 REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
 
 VERSION_URL="$REPO_URL/version.txt"
 CHANGELOG_URL="$REPO_URL/changelog.txt"
-SCRIPT_URL="$REPO_URL/nettool"
+
+SCRIPT_URL="$REPO_URL/normal_nettool"
+
+AI_DETECT_URL="$REPO_URL/nettools/ai/ai_detect.py"
+AI_TRAIN_URL="$REPO_URL/nettools/ai/ai_train.py"
+
+SCENARIO_URL="$REPO_URL/nettools/scenario/scenario_builder.sh"
+
 INSTALLER_URL="$REPO_URL/install.sh"
 
 # =========================
@@ -448,14 +456,28 @@ check_update() {
   echo "[~] Mengecek update..."
 
   # cek internet cepat
-  ping -c 1 8.8.8.8 &>/dev/null || return
+  ping -c 1 8.8.8.8 &>/dev/null || {
+    echo "[!] Tidak ada koneksi internet"
+    return
+  }
 
-  LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL")
+  # cek version URL valid dulu (HTTP STATUS CHECK)
+  HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --max-time 5 "$VERSION_URL")
 
-  if [ -z "$LATEST_VERSION" ]; then
-    echo "[!] Gagal ambil versi terbaru"
+  if [ "$HTTP_STATUS" != "200" ]; then
+    echo "[!] VERSION_URL tidak valid (HTTP $HTTP_STATUS)"
     return
   fi
+
+  LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL")
+  
+  if [ -z "$LATEST_VERSION" ]; then
+    echo "[!] Gagal ambil versi terbaru (kosong)"
+    return
+  fi
+
+  # normalisasi
+  LATEST_VERSION=$(echo "$LATEST_VERSION" | tr -d ' \n\r')
 
   if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
 
@@ -467,7 +489,7 @@ check_update() {
     echo ""
 
     echo "Perubahan:"
-    curl -s "$CHANGELOG_URL"
+    curl -s --max-time 5 "$CHANGELOG_URL"
     echo ""
 
     echo "1. Update sekarang"
@@ -476,18 +498,14 @@ check_update() {
 
     IFS= read -r -p "Pilih: " pilih
 
-    case $pilih in
-      1)
-        do_update
-        ;;
-      2)
-        echo "[~] Melewati update..."
-        ;;
-      *)
-        echo "[!] Pilihan tidak valid"
-        ;;
+    case "$pilih" in
+      1) do_update ;;
+      2) echo "[~] Melewati update..." ;;
+      *) echo "[!] Pilihan tidak valid" ;;
     esac
 
+  else
+    echo "[✔] Sudah versi terbaru"
   fi
 }
 
@@ -498,58 +516,169 @@ do_update() {
   sleep 1
 
   TMP_DIR="/tmp/nettool_update"
+  rm -rf "$TMP_DIR"
   mkdir -p "$TMP_DIR"
 
   SCRIPT_PATH="$(realpath "$0")"
-  TMP_FILE="$TMP_DIR/nettool_new"
+  BASE_DIR="$(dirname "$SCRIPT_PATH")"
 
-  echo "[~] Downloading update..."
+  TMP_MAIN="$TMP_DIR/normal_nettool"
 
-  curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$TMP_FILE"
+  TMP_AI_DETECT="$TMP_DIR/ai_detect.py"
+  TMP_AI_TRAIN="$TMP_DIR/ai_train.py"
 
-  # VALIDASI download
-  if [ ! -s "$TMP_FILE" ]; then
-    echo "[!] Gagal download update (file kosong)"
+  TMP_SCENARIO="$TMP_DIR/scenario_builder.sh"
+
+  # =========================
+  # CEK URL
+  # =========================
+
+  echo "[~] Validating update server..."
+
+  HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --max-time 10 "$SCRIPT_URL")
+
+  if [ "$HTTP_STATUS" != "200" ]; then
+    echo "[!] SCRIPT_URL tidak valid (HTTP $HTTP_STATUS)"
     rm -rf "$TMP_DIR"
     return
   fi
 
-  # VALIDASI basic (biar bukan file rusak)
-  if ! head -n 1 "$TMP_FILE" | grep -q "#!/bin/bash"; then
-    echo "[!] File update tidak valid!"
+  # =========================
+  # DOWNLOAD FILE
+  # =========================
+
+  echo "[~] Downloading main script..."
+  curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$TMP_MAIN"
+
+  echo "[~] Downloading AI detect..."
+  curl -fsSL --max-time 15 "$AI_DETECT_URL" -o "$TMP_AI_DETECT"
+
+  echo "[~] Downloading AI train..."
+  curl -fsSL --max-time 15 "$AI_TRAIN_URL" -o "$TMP_AI_TRAIN"
+
+  echo "[~] Downloading scenario builder..."
+  curl -fsSL --max-time 15 "$SCENARIO_URL" -o "$TMP_SCENARIO"
+
+  # =========================
+  # VALIDASI FILE
+  # =========================
+
+  echo "[~] Validating downloaded files..."
+
+  if [ ! -s "$TMP_MAIN" ]; then
+    echo "[!] Main script gagal didownload"
     rm -rf "$TMP_DIR"
     return
   fi
 
-  chmod +x "$TMP_FILE"
-
-  echo "[~] Backup script lama..."
-  cp "$SCRIPT_PATH" "$SCRIPT_PATH.bak"
-
-  if [ $? -ne 0 ]; then
-    echo "[!] Gagal backup"
+  if [ ! -s "$TMP_AI_DETECT" ]; then
+    echo "[!] ai_detect.py gagal didownload"
     rm -rf "$TMP_DIR"
     return
   fi
 
-  echo "[~] Mengganti script..."
+  if [ ! -s "$TMP_AI_TRAIN" ]; then
+    echo "[!] ai_train.py gagal didownload"
+    rm -rf "$TMP_DIR"
+    return
+  fi
 
-  mv "$TMP_FILE" "$SCRIPT_PATH"
+  if [ ! -s "$TMP_SCENARIO" ]; then
+    echo "[!] scenario_builder.sh gagal didownload"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  # =========================
+  # VALIDASI ISI FILE
+  # =========================
+
+  if ! head -n 1 "$TMP_MAIN" | grep -q "^#!/bin/bash"; then
+    echo "[!] Main script tidak valid"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  if ! head -n 1 "$TMP_SCENARIO" | grep -q "^#!/bin/bash"; then
+    echo "[!] scenario_builder.sh tidak valid"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  if ! grep -q "import" "$TMP_AI_DETECT"; then
+    echo "[!] ai_detect.py tidak valid"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  if ! grep -q "import" "$TMP_AI_TRAIN"; then
+    echo "[!] ai_train.py tidak valid"
+    rm -rf "$TMP_DIR"
+    return
+  fi
+
+  chmod +x "$TMP_MAIN"
+  chmod +x "$TMP_SCENARIO"
+
+  # =========================
+  # BACKUP
+  # =========================
+
+  echo "[~] Backup current version..."
+
+  cp "$SCRIPT_PATH" "$SCRIPT_PATH.bak" || {
+    echo "[!] Gagal backup normal_nettool"
+    rm -rf "$TMP_DIR"
+    return
+  }
+
+  # =========================
+  # UPDATE FILE
+  # =========================
+
+  echo "[~] Updating NETTOOLS..."
+
+  mv "$TMP_MAIN" "$SCRIPT_PATH"
+
+  mv "$TMP_AI_DETECT" \
+  "$BASE_DIR/nettools/ai/ai_detect.py"
+
+  mv "$TMP_AI_TRAIN" \
+  "$BASE_DIR/nettools/ai/ai_train.py"
+
+  mv "$TMP_SCENARIO" \
+  "$BASE_DIR/nettools/scenario/scenario_builder.sh"
+
+  # =========================
+  # PERMISSION
+  # =========================
+
   chmod +x "$SCRIPT_PATH"
 
-  if [ $? -ne 0 ]; then
-    echo "[!] Gagal replace script!"
-    echo "[~] Restore backup..."
+  chmod +x \
+  "$BASE_DIR/nettools/scenario/scenario_builder.sh"
+
+  # =========================
+  # VALIDASI UPDATE
+  # =========================
+
+  if [ ! -f "$SCRIPT_PATH" ]; then
+    echo "[!] Main script gagal diupdate"
     cp "$SCRIPT_PATH.bak" "$SCRIPT_PATH"
     rm -rf "$TMP_DIR"
     return
   fi
 
+  # =========================
+  # CLEANUP
+  # =========================
+
   rm -rf "$TMP_DIR"
 
+  echo ""
   echo "[✔] Update berhasil!"
   echo "[~] Restarting NETTOOLS..."
-  sleep 1
+  sleep 2
 
   exec "$SCRIPT_PATH"
 }
