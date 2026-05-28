@@ -326,7 +326,7 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="2.5.2"
+CURRENT_VERSION="2.5.3"
 
 REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
 
