@@ -28,6 +28,9 @@ BASE_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
 # 📌 VERSION
 # =========================
 
+echo "SCRIPT_DIR = $SCRIPT_DIR"
+echo "VERSION_FILE = $VERSION_FILE"
+
 VERSION_FILE="$SCRIPT_DIR/version.txt"
 
 if [ -f "$VERSION_FILE" ]; then
