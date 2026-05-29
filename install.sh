@@ -25,6 +25,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
 
 # =========================
+# 📌 VERSION
+# =========================
+
+VERSION_FILE="$SCRIPT_DIR/version.txt"
+
+if [ -f "$VERSION_FILE" ]; then
+  NETTOOL_VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
+else
+  NETTOOL_VERSION="UNKNOWN"
+fi
+
+# =========================
 # 🧰 FUNCTIONS
 # =========================
 
@@ -129,7 +141,7 @@ echo "                NETTOOLS INSTALLER"
 echo "=================================================="
 echo -e "${NC}"
 
-echo -e "${GREEN}Welcome to NETTOOLS V2.0.0${NC}"
+echo -e "${GREEN}Welcome to NETTOOLS V ${NETTOOL_VERSION}${NC}"
 echo ""
 echo "NETTOOLS is a multifunction Linux toolkit"
 echo "designed for networking, automation,"
@@ -721,7 +733,7 @@ echo "You can now launch NETTOOLS using:"
 echo ""
 echo -e "${GREEN}nettool${NC}"
 echo ""
-echo "Thank you for installing NETTOOLS V2.0.0"
+echo "Thank you for installing NETTOOLS V ${NETTOOL_VERSION}"
 echo ""
 
 
