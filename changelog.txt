@@ -1,20 +1,17 @@
-v2.5.0 - NetTools Update
+v1.0.0 - Kecembung Demo
 
 ==================================
-📅 Released: Friday, 22 May 2026
+📅 Released: Tuesday, 9 June 2026
 ==================================
 
-✨ Fitur Baru
+✨ Perubahan
 
-- Penambahan integrasi LLM pada sistem utama NetTools
-- Penambahan 2 menu baru: AI Chat dan AI Scenario Execution
+- NetTool diubah menjadi KECEMBUNG tool
 
 📊 Peningkatan
 
-- Peningkatan keterbacaan output agar lebih mudah dipahami oleh pengguna pemula
-- Penambahan sistem EO (Easier Output) untuk meningkatkan kenyamanan penggunaan dan navigasi menu
+- Peningkatan dalam teknis dan lebih fleksibel terhadap user
 
 🛠 Perbaikan
 
-- Perbaikan bug minor pada beberapa modul dan alur command system
-- Perbaikan bug UI/UX yang menganggu
+- Minor Bug telah diperbaiki
