@@ -22,16 +22,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 🌐 GITHUB SOURCE
 # =========================
 
-BASE_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
+BASE_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 
 # =========================
 # 📌 VERSION
 # =========================
 
-NETTOOL_VERSION=$(curl -fsSL "$BASE_URL/version.txt" 2>/dev/null | tr -d '[:space:]')
+KECEMBUNG_VERSION=$(curl -fsSL "$BASE_URL/version.txt" 2>/dev/null | tr -d '[:space:]')
 
-if [ -z "$NETTOOL_VERSION" ]; then
-  NETTOOL_VERSION="UNKNOWN"
+if [ -z "$KECEMBUNG_VERSION" ]; then
+  KECEMBUNG_VERSION="UNKNOWN"
 fi
 
 # =========================
@@ -55,14 +55,12 @@ warn() {
 }
 
 loading_bar() {
-
   local text="$1"
 
   echo ""
   echo -e "${CYAN}$text${NC}"
 
   for i in 20 40 60 80 100; do
-
     local filled=$(( i / 4 ))
     local empty=$(( 25 - filled ))
 
@@ -72,30 +70,23 @@ loading_bar() {
     printf "]${NC} ${YELLOW}%s%%${NC}" "$i"
 
     sleep 0.2
-
   done
 
   echo ""
 }
 
 progress_bar() {
-
   local current=$1
   local total=$2
   local label="$3"
-
   local width=30
-
   local percent=$(( current * 100 / total ))
   local filled=$(( width * current / total ))
   local empty=$(( width - filled ))
 
   printf "\r${CYAN}%-28s${NC} ${GREEN}[" "$label"
-
   printf "%0.s█" $(seq 1 $filled)
-
   printf "%0.s░" $(seq 1 $empty)
-
   printf "]${NC} ${YELLOW}%3d%%${NC}" "$percent"
 
   if [ "$current" -eq "$total" ]; then
@@ -104,26 +95,21 @@ progress_bar() {
 }
 
 apt_install() {
-
   local pkgs="$1"
 
   echo ""
   info "Installing required packages"
 
   progress_bar 1 4 "Updating package list"
-
   sudo apt update -y >/dev/null 2>&1 || return 1
 
   progress_bar 2 4 "Installing packages"
-
   sudo apt install -y $pkgs >/dev/null 2>&1 || return 1
 
   progress_bar 3 4 "Finalizing installation"
-
   sleep 1
 
   progress_bar 4 4 "Complete"
-
   return 0
 }
 
@@ -135,15 +121,15 @@ clear
 
 echo -e "${CYAN}"
 echo "=================================================="
-echo "                NETTOOLS INSTALLER"
+echo "              KECEMBUNG INSTALLER"
 echo "=================================================="
 echo -e "${NC}"
 
-echo -e "${GREEN}Welcome to NETTOOLS V ${NETTOOL_VERSION}${NC}"
+echo -e "${GREEN}Welcome to KECEMBUNG V ${KECEMBUNG_VERSION}${NC}"
 echo ""
-echo "NETTOOLS is a multifunction Linux toolkit"
+echo "KECEMBUNG is a modular Linux toolkit"
 echo "designed for networking, automation,"
-echo "storage utilities, and future AI systems."
+echo "storage utilities, and AI systems."
 echo ""
 
 sleep 1
@@ -172,281 +158,263 @@ sleep 1
 clear
 
 # =========================
-# 📦 EDITION MENU
+# 📦 COMPONENT SELECTION
 # =========================
+
+INSTALL_AI_DETECT=0
+INSTALL_AI_TRAIN=0
+INSTALL_AI_CHAT=0
+INSTALL_SCENARIO=0
 
 while true; do
 
-echo ""
-echo -e "${CYAN}==================================================${NC}"
-echo -e "${GREEN}                 SELECT MODEL${NC}"
-echo -e "${CYAN}==================================================${NC}"
-echo ""
+  echo ""
+  echo -e "${CYAN}==================================================${NC}"
+  echo -e "${GREEN}           SELECT COMPONENTS${NC}"
+  echo -e "${CYAN}==================================================${NC}"
+  echo ""
+  echo -e "${GREEN}[1] AI Detect${NC}"
+  echo "    Object detection via webcam, RTSP, image, or video"
+  echo "    Requires: Python venv, ultralytics, opencv, torch"
+  echo ""
+  echo -e "${GREEN}[2] AI Train${NC}"
+  echo "    Train custom YOLO models with your own dataset"
+  echo "    Requires: Python venv, ultralytics"
+  echo ""
+  echo -e "${GREEN}[3] AI Chat${NC}"
+  echo "    Local LLM chat assistant powered by Ollama"
+  echo "    Requires: Ollama"
+  echo ""
+  echo -e "${GREEN}[4] Scenario Builder${NC}"
+  echo "    Build and run automated command scenarios"
+  echo "    Optional: Ollama (for AI scenario generation)"
+  echo ""
+  echo -e "${CYAN}==================================================${NC}"
+  echo -e "${YELLOW}Select components (example: 1 3 4)${NC}"
+  echo -e "${YELLOW}Type 'all' to install everything${NC}"
+  echo -e "${YELLOW}Or press ENTER to install core only${NC}"
+  echo -e "${CYAN}==================================================${NC}"
 
-echo -e "${GREEN}[1] Light Nettool${NC}"
-echo "    Lightweight version for low-storage systems"
-echo "    Basic networking and storage utilities"
-echo ""
+  IFS= read -r -p "Select: " selection </dev/tty
 
-echo -e "${GREEN}[2] Normal Nettool${NC}"
-echo "    Full networking suite with AI support"
-echo "    Recommended for 75GB+ systems"
-echo ""
+  # =========================
+  # CORE ONLY (ENTER)
+  # =========================
 
-echo -e "${YELLOW}[3] Power Nettool${NC}"
-echo "    Advanced AI, RAG, automation, and LLM systems"
-echo "    Currently unavailable"
-echo ""
-
-IFS= read -r -p "Select edition [1-3]: " edition </dev/tty
-
-if [ -z "$edition" ]; then
-  continue
-fi
-
-case $edition in
-
-  1)
-
+  if [ -z "$selection" ]; then
     echo ""
-    echo -e "${CYAN}================ LIGHT NETTOOL ================${NC}"
+    echo -e "${CYAN}==================================================${NC}"
+    echo -e "${GREEN}         SELECTED: CORE ONLY${NC}"
+    echo -e "${CYAN}==================================================${NC}"
     echo ""
-
-    echo -e "${GREEN}Recommended For:${NC}"
-    echo "- Lightweight laptops"
-    echo "- Small SSD/HDD systems"
-    echo "- Virtual machines"
+    echo -e "${CYAN}  [~] Networking tools${NC}"
+    echo -e "${CYAN}  [~] TCP tools${NC}"
+    echo -e "${CYAN}  [~] Storage utilities${NC}"
+    echo -e "${CYAN}  [~] USB tools${NC}"
     echo ""
+    echo -e "${CYAN}==================================================${NC}"
 
-    echo -e "${GREEN}Included Features:${NC}"
-    echo "- TCP tools"
-    echo "- Storage utilities"
-    echo "- Scenario tools"
-    echo "- System utilities"
-    echo ""
+    IFS= read -r -p "Confirm installation? (YES/no): " confirm </dev/tty
 
-    echo -e "${RED}Not Included:${NC}"
-    echo "- AI packages"
-    echo "- LLM support"
-    echo "- Heavy dependencies"
-    echo ""
-
-    IFS= read -r -p "Type YES to install Light Nettool: " confirm </dev/tty
-
-    if [ "$confirm" = "YES" ]; then
-      NETTOOL_MODE="LIGHT"
-      break
-    else
-      clear
-      continue
-    fi
-    
-    ;;
-
-  2)
-
-    echo ""
-    echo -e "${CYAN}=============== NORMAL NETTOOL ===============${NC}"
-    echo ""
-
-    echo -e "${GREEN}Recommended For:${NC}"
-    echo "- Daily Linux users"
-    echo "- Large storage systems"
-    echo "- AI experimentation"
-    echo ""
-
-    echo -e "${GREEN}Included Features:${NC}"
-    echo "- Full networking suite"
-    echo "- AI tools"
-    echo "- Scenario automation"
-    echo "- Extended storage utilities"
-    echo ""
-
-    echo -e "${YELLOW}Recommended Storage:${NC}"
-    echo "- 75GB or higher"
-    echo ""
-
-    IFS= read -r -p "Type YES to install Normal Nettool: " confirm </dev/tty
-
-    if [ "$confirm" = "YES" ]; then
-      NETTOOL_MODE="NORMAL"
-      break
-    else
+    if [ "$confirm" = "no" ]; then
       clear
       continue
     fi
 
-    ;;
+    break
+  fi
 
-  3)
+  # =========================
+  # ALL
+  # =========================
 
-    echo ""
-    echo -e "${CYAN}================ POWER NETTOOL ================${NC}"
-    echo ""
+  if [ "$selection" = "all" ]; then
+    INSTALL_AI_DETECT=1
+    INSTALL_AI_TRAIN=1
+    INSTALL_AI_CHAT=1
+    INSTALL_SCENARIO=1
+  else
 
-    echo -e "${RED}[LOCKED / COMING SOON]${NC}"
-    echo ""
+    valid=0
 
-    echo "- Local LLM integration"
-    echo "- RAG system"
-    echo "- Advanced AI workflows"
-    echo "- Multi-stage automation"
-    echo "- Advanced scenario engine"
-    echo "- Multi-machine management"
-    echo ""
+    for num in $selection; do
+      case $num in
+        1) INSTALL_AI_DETECT=1; valid=1 ;;
+        2) INSTALL_AI_TRAIN=1;  valid=1 ;;
+        3) INSTALL_AI_CHAT=1;   valid=1 ;;
+        4) INSTALL_SCENARIO=1;  valid=1 ;;
+        *)
+          warn "Unknown component: $num"
+          ;;
+      esac
+    done
 
-    echo -e "${YELLOW}Power Nettool is currently unavailable.${NC}"
-    echo ""
+    if [ "$valid" -eq 0 ]; then
+      warn "No valid component selected, try again"
+      sleep 1
+      clear
+      continue
+    fi
 
-    echo ""
-    IFS= read -r -p "Press ENTER to return..." dummy </dev/tty
+  fi
+
+  # =========================
+  # CONFIRM SELECTION
+  # =========================
+
+  echo ""
+  echo -e "${CYAN}==================================================${NC}"
+  echo -e "${GREEN}         SELECTED COMPONENTS${NC}"
+  echo -e "${CYAN}==================================================${NC}"
+  echo ""
+
+  echo -e "${CYAN}  [~] Core (always included)${NC}"
+  [ "$INSTALL_AI_DETECT" -eq 1 ] && echo -e "${GREEN}  [✔] AI Detect${NC}"
+  [ "$INSTALL_AI_TRAIN"  -eq 1 ] && echo -e "${GREEN}  [✔] AI Train${NC}"
+  [ "$INSTALL_AI_CHAT"   -eq 1 ] && echo -e "${GREEN}  [✔] AI Chat${NC}"
+  [ "$INSTALL_SCENARIO"  -eq 1 ] && echo -e "${GREEN}  [✔] Scenario Builder${NC}"
+
+  echo ""
+  echo -e "${CYAN}==================================================${NC}"
+
+  IFS= read -r -p "Confirm installation? (YES/no): " confirm </dev/tty
+
+  if [ "$confirm" = "no" ]; then
     clear
-    ;;
+    INSTALL_AI_DETECT=0
+    INSTALL_AI_TRAIN=0
+    INSTALL_AI_CHAT=0
+    INSTALL_SCENARIO=0
+    continue
+  fi
 
-  *)
-
-    echo ""
-    echo -e "${RED}[!] Invalid option${NC}"
-    echo ""
-
-    ;;
-
-esac
+  break
 
 done
+
+clear
 
 # =========================
 # 🚀 INSTALL START
 # =========================
 
-clear
-
 echo -e "${CYAN}"
 echo "=================================================="
-echo "              STARTING INSTALLATION"
+echo "            STARTING INSTALLATION"
 echo "=================================================="
 echo -e "${NC}"
 
-echo ""
-info "Selected Edition : $NETTOOL_MODE"
-
-sleep 1
-
 # =========================
-# 📦 DEPENDENCIES
+# 📦 BASE DEPENDENCIES
 # =========================
 
-if [ "$NETTOOL_MODE" = "LIGHT" ]; then
+info "Installing base dependencies"
 
-  if apt_install "nmap netcat-openbsd iproute2 dialog figlet wget"; then
-    ok "Dependencies installed"
-  else
-    fail "Dependency installation failed"
-    exit 1
-  fi
-
-fi
-
-if [ "$NETTOOL_MODE" = "NORMAL" ]; then
-
-  if apt_install "nmap netcat-openbsd iproute2 dialog figlet wget python3 python3-pip"; then
-    ok "Dependencies installed"
-  else
-    fail "Dependency installation failed"
-    exit 1
-  fi
-
+if apt_install "nmap netcat-openbsd iproute2 dialog figlet wget curl"; then
+  ok "Base dependencies installed"
+else
+  fail "Base dependency installation failed"
+  exit 1
 fi
 
 # =========================
-# 🤖 AI ENV (NORMAL)
+# 🐍 PYTHON VENV
 # =========================
 
-check_ai_backend() {
+NEED_VENV=0
+[ "$INSTALL_AI_DETECT" -eq 1 ] && NEED_VENV=1
+[ "$INSTALL_AI_TRAIN"  -eq 1 ] && NEED_VENV=1
 
-  AI_ENV="$HOME/nettool-env"
+AI_ENV="$HOME/kecembung-env"
 
-  # cek folder env
-  if [ ! -d "$AI_ENV" ]; then
-    return 1
-  fi
+if [ "$NEED_VENV" -eq 1 ]; then
 
-  # cek python
-  if [ ! -x "$AI_ENV/bin/python" ]; then
-    return 1
-  fi
+  echo ""
+  info "Setting up Python environment"
 
-  # cek pip
-  if [ ! -x "$AI_ENV/bin/pip" ]; then
-    return 1
-  fi
-
-  # cek dependency python
-  "$AI_ENV/bin/python" -c "
-import ultralytics
-import cv2
-import torch
-" >/dev/null 2>&1
-
-  return $?
-}
-
-if [ "$NETTOOL_MODE" = "NORMAL" ]; then
-
-  AI_ENV="$HOME/nettool-env"
-
-  info "Checking AI backend..."
-
-  if check_ai_backend; then
-
-    ok "AI backend already installed"
-    info "Skipping AI installation"
-
+  if apt_install "python3 python3-pip python3-venv"; then
+    ok "Python installed"
   else
+    fail "Python installation failed"
+    exit 1
+  fi
 
-    warn "AI backend missing/corrupted"
-    info "Installing AI backend..."
+  if [ ! -d "$AI_ENV" ] || \
+     [ ! -x "$AI_ENV/bin/python" ] || \
+     [ ! -x "$AI_ENV/bin/pip" ]; then
 
     rm -rf "$AI_ENV"
+    python3 -m venv "$AI_ENV" || {
+      fail "Failed to create virtual environment"
+      exit 1
+    }
 
-    python3 -m venv "$AI_ENV"
+    progress_bar 1 3 "Upgrading pip"
+    "$AI_ENV/bin/pip" install --upgrade pip >/dev/null 2>&1
 
-    "$AI_ENV/bin/pip" install --upgrade pip \
-      >/dev/null 2>&1
-
+    progress_bar 2 3 "Installing AI packages"
     "$AI_ENV/bin/pip" install ultralytics opencv-python \
       --no-cache-dir >/dev/null 2>&1
 
-    "$AI_ENV/bin/pip" install torch torchvision torchaudio \
-      --index-url https://download.pytorch.org/whl/cpu \
-      >/dev/null 2>&1
+    if [ "$INSTALL_AI_DETECT" -eq 1 ]; then
+      progress_bar 3 3 "Installing torch"
+      "$AI_ENV/bin/pip" install torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cpu \
+        >/dev/null 2>&1
+    else
+      progress_bar 3 3 "Finalizing"
+      sleep 0.5
+    fi
 
-    ok "AI environment ready"
+    ok "Python environment ready"
 
+  else
+    ok "Python environment already exists, skipping"
   fi
 
-  # =========================
-  # 🧠 OLLAMA CHECK
-  # =========================
+fi
 
+# =========================
+# 🧠 OLLAMA
+# =========================
+
+NEED_OLLAMA=0
+[ "$INSTALL_AI_CHAT"  -eq 1 ] && NEED_OLLAMA=1
+[ "$INSTALL_SCENARIO" -eq 1 ] && NEED_OLLAMA=1
+
+if [ "$NEED_OLLAMA" -eq 1 ]; then
+
+  echo ""
   info "Checking Ollama..."
 
   if command -v ollama >/dev/null 2>&1; then
-
     ok "Ollama already installed"
-
   else
 
-    warn "Ollama not found"
-    info "Installing Ollama..."
+    # kalau hanya scenario yang dipilih, ollama opsional
+    if [ "$INSTALL_AI_CHAT" -eq 0 ] && [ "$INSTALL_SCENARIO" -eq 1 ]; then
+      echo ""
+      warn "Ollama is optional for Scenario Builder"
+      echo "      Without Ollama, AI Scenario feature will be hidden"
+      echo ""
+      IFS= read -r -p "Install Ollama? (YES/no): " ollama_confirm </dev/tty
 
-    curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1
+      if [ "$ollama_confirm" = "no" ]; then
+        warn "Skipping Ollama"
+        NEED_OLLAMA=0
+      fi
+    fi
 
-    if [ $? -eq 0 ]; then
-      ok "Ollama installed"
-    else
-      fail "Failed to install Ollama"
-      exit 1
+    if [ "$NEED_OLLAMA" -eq 1 ]; then
+      info "Installing Ollama..."
+      curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1
+
+      if [ $? -eq 0 ]; then
+        ok "Ollama installed"
+      else
+        fail "Failed to install Ollama"
+        exit 1
+      fi
     fi
 
   fi
@@ -458,235 +426,166 @@ fi
 # =========================
 
 echo ""
-info "Creating NETTOOLS structure"
+info "Creating KECEMBUNG structure"
 
-mkdir -p ~/nettools_scenarios
-mkdir -p ~/nettools_logs
-mkdir -p ~/nettools_modules
+mkdir -p "$HOME/.kecembung/ai"
+mkdir -p "$HOME/.kecembung/scenarios"
+mkdir -p "$HOME/.kecembung/logs"
+mkdir -p "$HOME/kecembung_scenarios"
+mkdir -p "$HOME/kecembung_logs"
 
 progress_bar 1 3 "Creating folders"
+sleep 0.3
+progress_bar 2 3 "Preparing structure"
+sleep 0.3
+progress_bar 3 3 "Done"
 
-sleep 0.5
-
-progress_bar 2 3 "Preparing launcher"
-
-sleep 0.5
-
-progress_bar 3 3 "Finalizing structure"
-
-ok "Folders created"
+ok "Structure created"
 
 # =========================
-# 📝 PREPARE NETTOOL
+# 📥 DOWNLOAD MAIN SCRIPT
 # =========================
 
 echo ""
+info "Downloading KECEMBUNG main script"
+
+curl -fsSL "$BASE_URL/kecembung" -o /tmp/kecembung || {
+  fail "Failed to download kecembung"
+  exit 1
+}
+
+chmod +x /tmp/kecembung
+ok "Main script downloaded"
 
 # =========================
-# 🟡 LIGHT NETTOOL
+# 📥 DOWNLOAD AI DETECT
 # =========================
 
-if [ "$NETTOOL_MODE" = "LIGHT" ]; then
+if [ "$INSTALL_AI_DETECT" -eq 1 ]; then
 
-  wget -q -O /tmp/nettool "$BASE_URL/light_nettool" || {
-    fail "Failed to download Light Nettool"
-    exit 1
-  }
-
-  ok "Light Nettool downloaded"
-
-fi
-
-# =========================
-# 🟢 NORMAL NETTOOL
-# =========================
-
-if [ "$NETTOOL_MODE" = "NORMAL" ]; then
-  
-  # =========================
-  # DOWNLOAD MAIN NETTOOL
-  # =========================
-
-  wget -q -O /tmp/nettool "$BASE_URL/normal_nettool" || {
-    fail "Failed to download Normal Nettool"
-    exit 1
-  }
-
-  ok "Normal Nettool downloaded"
-  
   echo ""
-  info "Installing AI modules"
+  info "Downloading AI Detect"
 
-  mkdir -p "$HOME/.nettool/ai"
-  mkdir -p "$HOME/.nettool/scenarios"
-
-# =========================
-# AI DETECT
-# =========================
-
-  progress_bar 1 4 "Downloading AI Detect"
-
-  curl -sSL \
-  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/ai/ai_detect.py \
-  -o "$HOME/.nettool/ai/ai_detect.py" || {
+  curl -fsSL "$BASE_URL/kecembung_/ai/ai_detect.py" \
+    -o "$HOME/.kecembung/ai/ai_detect.py" || {
     fail "Failed to download ai_detect.py"
     exit 1
   }
 
-  sleep 0.3
+  ok "AI Detect downloaded"
+
+fi
 
 # =========================
-# TRAIN
+# 📥 DOWNLOAD AI TRAIN
 # =========================
 
-  progress_bar 2 4 "Downloading Trainer"
+if [ "$INSTALL_AI_TRAIN" -eq 1 ]; then
 
-  curl -sSL \
-  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/ai/ai_train.py \
-  -o "$HOME/.nettool/ai/ai_train.py" || {
-      fail "Failed to download ai_train.py"
-      exit 1
+  echo ""
+  info "Downloading AI Train"
+
+  curl -fsSL "$BASE_URL/kecembung_/ai/ai_train.py" \
+    -o "$HOME/.kecembung/ai/ai_train.py" || {
+    fail "Failed to download ai_train.py"
+    exit 1
   }
 
+  ok "AI Train downloaded"
+
+fi
+
 # =========================
-# SCENARIO BUILDER
+# 📥 DOWNLOAD SCENARIO BUILDER
 # =========================
 
-  progress_bar 3 4 "Downloading Scenario Builder"
+if [ "$INSTALL_SCENARIO" -eq 1 ]; then
 
-  curl -sSL \
-  https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main/nettools/scenario/scenario_builder.sh \
-  -o "$HOME/.nettool/scenarios/scenario_builder.sh" || {
+  echo ""
+  info "Downloading Scenario Builder"
+
+  curl -fsSL "$BASE_URL/kecembung_/scenario/scenario_builder.sh" \
+    -o "$HOME/.kecembung/scenarios/scenario_builder.sh" || {
     fail "Failed to download scenario_builder.sh"
     exit 1
   }
 
-  chmod +x "$HOME/.nettool/scenarios/scenario_builder.sh"
-
-  sleep 0.3
-
-# =========================
-# COMPLETE
-# =========================
-
-progress_bar 4 4 "Finalizing AI modules"
-
-ok "AI modules installed"
+  chmod +x "$HOME/.kecembung/scenarios/scenario_builder.sh"
+  ok "Scenario Builder downloaded"
 
 fi
 
 # =========================
-# 🔒 FINAL VALIDATION
-# =========================
-if [ ! -f /tmp/nettool ]; then
-  fail "Launcher preparation failed"
-  exit 1
-fi
-
-chmod +x /tmp/nettool
-
-ok "Launcher ready"
-
-# =========================
-# ⚙️ MODE FLAG GENERATOR
-# =========================
-
-info "Generating system mode flag"
-
-MODE_FILE="$HOME/.nettool_mode"
-
-# LIGHT MODE
-if [ "$NETTOOL_MODE" = "LIGHT" ]; then
-
-  echo "AI_ENABLED=0" > "$MODE_FILE"
-  echo "MODE=LIGHT" >> "$MODE_FILE"
-
-fi
-
-# NORMAL MODE
-if [ "$NETTOOL_MODE" = "NORMAL" ]; then
-
-  echo "AI_ENABLED=1" > "$MODE_FILE"
-  echo "MODE=NORMAL" >> "$MODE_FILE"
-
-fi
-
-# =========================
-# 🔒 SECURITY LOCK
-# =========================
-chmod 600 "$MODE_FILE"
-
-# =========================
-# 🧪 VALIDATION
-# =========================
-if [ ! -s "$MODE_FILE" ]; then
-  fail "Mode file generation failed"
-  exit 1
-fi
-
-ok "Mode system configured"
-
-# =========================
-# 📦 INSTALL COMMAND
+# ⚙️ MODE FLAG
 # =========================
 
 echo ""
-info "Installing NETTOOLS command"
+info "Generating mode flag"
 
-sudo mv /tmp/nettool /usr/local/bin/nettool
+MODE_FILE="$HOME/.kecembung_mode"
 
-sudo chmod +x /usr/local/bin/nettool
+cat > "$MODE_FILE" <<EOF
+AI_DETECT=$INSTALL_AI_DETECT
+AI_TRAIN=$INSTALL_AI_TRAIN
+AI_CHAT=$INSTALL_AI_CHAT
+SCENARIO=$INSTALL_SCENARIO
+OLLAMA=$NEED_OLLAMA
+EOF
+
+chmod 600 "$MODE_FILE"
+ok "Mode flag configured"
+
+# =========================
+# 📦 INSTALL COMMAND: bung
+# =========================
+
+echo ""
+info "Installing 'bung' command"
+
+sudo mv /tmp/kecembung /usr/local/bin/kecembung
+sudo chmod +x /usr/local/bin/kecembung
+
+cat > /tmp/bung <<'BUNGSCRIPT'
+#!/bin/bash
+exec /usr/local/bin/kecembung "$@"
+BUNGSCRIPT
+
+sudo mv /tmp/bung /usr/local/bin/bung
+sudo chmod +x /usr/local/bin/bung
 
 progress_bar 1 2 "Installing launcher"
-
 sleep 0.5
-
 progress_bar 2 2 "Completing install"
 
-ok "NETTOOLS installed"
+ok "'bung' command installed"
 
 # =========================
-# 🔗 LINK SYSTEM
-# =========================
-
-echo ""
-info "Creating system link"
-
-sudo ln -sf /usr/local/bin/nettool /usr/bin/nettool
-
-ok "Command linked"
-
-# =========================
-# 🔐 SET NETTOOLS PASSWORD
+# 🔐 SET PASSWORD
 # =========================
 
 echo ""
 echo -e "${CYAN}==============================${NC}"
-echo -e "${GREEN} SET NETTOOLS PASSWORD${NC}"
+echo -e "${GREEN}   SET KECEMBUNG PASSWORD${NC}"
 echo -e "${CYAN}==============================${NC}"
 
-PASS_FILE="$HOME/.nettool_pass"
+PASS_FILE="$HOME/.kecembung_pass"
 
 while true; do
 
-  IFS= read -r -s -p "Create NETTOOLS Password: " pass1 </dev/tty
+  IFS= read -r -s -p "Create Password: " pass1 </dev/tty
   echo ""
 
   IFS= read -r -s -p "Confirm Password: " pass2 </dev/tty
   echo ""
 
   if [ -z "$pass1" ]; then
-
     echo -e "${RED}[!] Password cannot be empty${NC}"
     continue
-
   fi
 
   if [ "$pass1" != "$pass2" ]; then
-
     echo -e "${RED}[!] Password mismatch${NC}"
     continue
-
   fi
 
   break
@@ -694,45 +593,55 @@ while true; do
 done
 
 PASS_HASH=$(echo -n "$pass1" | sha256sum | awk '{print $1}')
-
 echo "$PASS_HASH" > "$PASS_FILE"
-
 chmod 600 "$PASS_FILE"
 
-ok "NETTOOLS password configured"
+ok "Password configured"
 
 # =========================
-# 🎉 DONE
+# 🎉 SUMMARY
 # =========================
 
 echo ""
-echo "=============================="
-echo " INSTALL SUMMARY"
-echo "=============================="
-echo "Edition : $NETTOOL_MODE"
-echo "Command : nettool"
-echo "Python AI Env : $( [ -d ~/nettool-env ] && echo READY || echo NONE )"
-echo "=============================="
+echo -e "${CYAN}==============================${NC}"
+echo -e "${GREEN}      INSTALL SUMMARY${NC}"
+echo -e "${CYAN}==============================${NC}"
+echo ""
+echo -e "Version  : ${GREEN}$KECEMBUNG_VERSION${NC}"
+echo -e "Command  : ${GREEN}bung${NC}"
+echo ""
+echo -e "Components:"
+echo -e "  ${CYAN}[~] Core${NC}"
 
-loading_bar "Finalizing NETTOOL function"
+if [ "$INSTALL_AI_DETECT" -eq 0 ] && \
+   [ "$INSTALL_AI_TRAIN"  -eq 0 ] && \
+   [ "$INSTALL_AI_CHAT"   -eq 0 ] && \
+   [ "$INSTALL_SCENARIO"  -eq 0 ]; then
+  echo -e "  ${CYAN}[~] No additional components${NC}"
+else
+  [ "$INSTALL_AI_DETECT" -eq 1 ] && echo -e "  ${GREEN}[✔] AI Detect${NC}"   || echo -e "  ${RED}[✘] AI Detect${NC}"
+  [ "$INSTALL_AI_TRAIN"  -eq 1 ] && echo -e "  ${GREEN}[✔] AI Train${NC}"    || echo -e "  ${RED}[✘] AI Train${NC}"
+  [ "$INSTALL_AI_CHAT"   -eq 1 ] && echo -e "  ${GREEN}[✔] AI Chat${NC}"     || echo -e "  ${RED}[✘] AI Chat${NC}"
+  [ "$INSTALL_SCENARIO"  -eq 1 ] && echo -e "  ${GREEN}[✔] Scenario Builder${NC}" || echo -e "  ${RED}[✘] Scenario Builder${NC}"
+fi
+
+echo ""
+echo -e "${CYAN}==============================${NC}"
+
+loading_bar "Finalizing KECEMBUNG..."
 sleep 1
 
 echo ""
 echo -e "${GREEN}"
 echo "=================================================="
-echo "               INSTALL COMPLETE"
+echo "              INSTALL COMPLETE"
 echo "=================================================="
 echo -e "${NC}"
 
 echo ""
-echo -e "${CYAN}Installed Edition : $NETTOOL_MODE${NC}"
+echo -e "${CYAN}You can now launch KECEMBUNG using:${NC}"
 echo ""
-echo "You can now launch NETTOOLS using:"
+echo -e "${GREEN}  bung${NC}"
 echo ""
-echo -e "${GREEN}nettool${NC}"
+echo -e "Thank you for installing KECEMBUNG V ${KECEMBUNG_VERSION}"
 echo ""
-echo "Thank you for installing NETTOOLS V ${NETTOOL_VERSION}"
-echo ""
-
-
-
