@@ -56,10 +56,10 @@ print_info() {
 }
 
 # =========================
-# 📁 NETTOOLS BASE DIRECTORY
+# 📁 KECEMBUNG BASE DIRECTORY
 # =========================
 
-BASE_DIR="$HOME/.nettool"
+BASE_DIR="$HOME/.kecembung"
 
 # =========================
 # 🤖 AI DIRECTORY
@@ -82,7 +82,7 @@ SCENARIO_BUILDER="$SCENARIO_DIR/scenario_builder.sh"
 # 🧠 AI PYTHON ENV
 # =========================
 
-AI_ENV="$HOME/nettool-env"
+AI_ENV="$HOME/kecembung-env"
 AI_PYTHON="$AI_ENV/bin/python"
 
 # =========================
@@ -141,12 +141,12 @@ fi
 # ❤️ HEARTBEAT
 # =========================
 
-NETTOOL_DIR="$BASE_DIR"
+KECEMBUNG_DIR="$BASE_DIR"
 
-mkdir -p "$NETTOOL_DIR"
+mkdir -p "$KECEMBUNG_DIR"
 
-HEARTBEAT_FILE="$NETTOOL_DIR/heartbeat"
-WATCHDOG_FILE="$NETTOOL_DIR/watchdog"
+HEARTBEAT_FILE="$KECEMBUNG_DIR/heartbeat"
+WATCHDOG_FILE="$KECEMBUNG_DIR/watchdog"
 
 write_heartbeat() {
     echo "$(date +%s)" > "$HEARTBEAT_FILE"
@@ -285,7 +285,7 @@ safe_ai() {
 # =========================
 
 AI_MODEL_DEFAULT="phi3:mini"
-AI_HISTORY_DIR="$HOME/nettools_ai_history"
+AI_HISTORY_DIR="$HOME/kecembung_ai_history"
 mkdir -p "$AI_HISTORY_DIR"
 
 # =========================
@@ -326,19 +326,21 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="2.5.0"
+CURRENT_VERSION="3.0.0"
 
-REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
+REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 
 VERSION_URL="$REPO_URL/version.txt"
 CHANGELOG_URL="$REPO_URL/changelog.txt"
 
-SCRIPT_URL="$REPO_URL/normal_nettool"
+SCRIPT_URL="$REPO_URL/kecembung"
 
-AI_DETECT_URL="$REPO_URL/nettools/ai/ai_detect.py"
-AI_TRAIN_URL="$REPO_URL/nettools/ai/ai_train.py"
+UPDATE_URL="$REPO_URL/update.sh"
 
-SCENARIO_URL="$REPO_URL/nettools/scenario/scenario_builder.sh"
+AI_DETECT_URL="$REPO_URL/kecembung/ai/ai_detect.py"
+AI_TRAIN_URL="$REPO_URL/kecembung/ai/ai_train.py"
+
+SCENARIO_URL="$REPO_URL/kecembung/scenario/scenario_builder.sh"
 
 INSTALLER_URL="$REPO_URL/install.sh"
 
@@ -511,182 +513,48 @@ check_update() {
 
 do_update() {
 
+  UPDATE_SCRIPT="$HOME/.kecembung/update.sh"
+
+  mkdir -p "$HOME/.kecembung"
+
   echo ""
-  echo "[~] Memulai update NETTOOLS..."
+  echo "[~] Preparing update engine..."
+
+  curl -fsSL "$UPDATE_URL" -o "$UPDATE_SCRIPT"
+
+  if [ ! -s "$UPDATE_SCRIPT" ]; then
+    echo "[!] Gagal download update.sh"
+    return 1
+  fi
+
+  chmod +x "$UPDATE_SCRIPT"
+
+  clear
+
+  echo "[~] Launching KECEMBUNG updater..."
   sleep 1
 
-  TMP_DIR="/tmp/nettool_update"
-  rm -rf "$TMP_DIR"
-  mkdir -p "$TMP_DIR"
+  bash "$UPDATE_SCRIPT"
 
-  SCRIPT_PATH="$(realpath "$0")"
-  BASE_DIR="$(dirname "$SCRIPT_PATH")"
+  local status=$?
 
-  TMP_MAIN="$TMP_DIR/normal_nettool"
-
-  TMP_AI_DETECT="$TMP_DIR/ai_detect.py"
-  TMP_AI_TRAIN="$TMP_DIR/ai_train.py"
-
-  TMP_SCENARIO="$TMP_DIR/scenario_builder.sh"
-
-  # =========================
-  # CEK URL
-  # =========================
-
-  echo "[~] Validating update server..."
-
-  HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --max-time 10 "$SCRIPT_URL")
-
-  if [ "$HTTP_STATUS" != "200" ]; then
-    echo "[!] SCRIPT_URL tidak valid (HTTP $HTTP_STATUS)"
-    rm -rf "$TMP_DIR"
-    return
+  if [ $status -ne 0 ]; then
+    echo "[!] Update gagal"
+    return 1
   fi
-
-  # =========================
-  # DOWNLOAD FILE
-  # =========================
-
-  echo "[~] Downloading main script..."
-  curl -fsSL --max-time 15 "$SCRIPT_URL" -o "$TMP_MAIN"
-
-  echo "[~] Downloading AI detect..."
-  curl -fsSL --max-time 15 "$AI_DETECT_URL" -o "$TMP_AI_DETECT"
-
-  echo "[~] Downloading AI train..."
-  curl -fsSL --max-time 15 "$AI_TRAIN_URL" -o "$TMP_AI_TRAIN"
-
-  echo "[~] Downloading scenario builder..."
-  curl -fsSL --max-time 15 "$SCENARIO_URL" -o "$TMP_SCENARIO"
-
-  # =========================
-  # VALIDASI FILE
-  # =========================
-
-  echo "[~] Validating downloaded files..."
-
-  if [ ! -s "$TMP_MAIN" ]; then
-    echo "[!] Main script gagal didownload"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  if [ ! -s "$TMP_AI_DETECT" ]; then
-    echo "[!] ai_detect.py gagal didownload"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  if [ ! -s "$TMP_AI_TRAIN" ]; then
-    echo "[!] ai_train.py gagal didownload"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  if [ ! -s "$TMP_SCENARIO" ]; then
-    echo "[!] scenario_builder.sh gagal didownload"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  # =========================
-  # VALIDASI ISI FILE
-  # =========================
-
-  if ! head -n 1 "$TMP_MAIN" | grep -q "^#!/bin/bash"; then
-    echo "[!] Main script tidak valid"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  if ! head -n 1 "$TMP_SCENARIO" | grep -q "^#!/bin/bash"; then
-    echo "[!] scenario_builder.sh tidak valid"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  if ! grep -q "import" "$TMP_AI_DETECT"; then
-    echo "[!] ai_detect.py tidak valid"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  if ! grep -q "import" "$TMP_AI_TRAIN"; then
-    echo "[!] ai_train.py tidak valid"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  chmod +x "$TMP_MAIN"
-  chmod +x "$TMP_SCENARIO"
-
-  # =========================
-  # BACKUP
-  # =========================
-
-  echo "[~] Backup current version..."
-
-  cp "$SCRIPT_PATH" "$SCRIPT_PATH.bak" || {
-    echo "[!] Gagal backup normal_nettool"
-    rm -rf "$TMP_DIR"
-    return
-  }
-
-  # =========================
-  # UPDATE FILE
-  # =========================
-
-  echo "[~] Updating NETTOOLS..."
-
-  mv "$TMP_MAIN" "$SCRIPT_PATH"
-
-  mv "$TMP_AI_DETECT" \
-  "$BASE_DIR/nettools/ai/ai_detect.py"
-
-  mv "$TMP_AI_TRAIN" \
-  "$BASE_DIR/nettools/ai/ai_train.py"
-
-  mv "$TMP_SCENARIO" \
-  "$BASE_DIR/nettools/scenario/scenario_builder.sh"
-
-  # =========================
-  # PERMISSION
-  # =========================
-
-  chmod +x "$SCRIPT_PATH"
-
-  chmod +x \
-  "$BASE_DIR/nettools/scenario/scenario_builder.sh"
-
-  # =========================
-  # VALIDASI UPDATE
-  # =========================
-
-  if [ ! -f "$SCRIPT_PATH" ]; then
-    echo "[!] Main script gagal diupdate"
-    cp "$SCRIPT_PATH.bak" "$SCRIPT_PATH"
-    rm -rf "$TMP_DIR"
-    return
-  fi
-
-  # =========================
-  # CLEANUP
-  # =========================
-
-  rm -rf "$TMP_DIR"
 
   echo ""
-  echo "[✔] Update berhasil!"
-  echo "[~] Restarting NETTOOLS..."
+  echo "[✔] Update selesai"
+  echo "[~] Restarting KECEMBUNG..."
   sleep 2
 
-  exec "$SCRIPT_PATH"
+  exec "$0"
 }
 
 # =========================
 # 🧠 PYTHON ENV AUTO DETECT + AUTO CREATE
 # =========================
-ENV_PATH="$HOME/nettool-env"
+ENV_PATH="$HOME/kecembung-env"
 
 if [ ! -d "$ENV_PATH" ] || \
    [ ! -f "$ENV_PATH/bin/python" ] || \
@@ -760,7 +628,7 @@ fi
 # 🔐 PASSWORD PROTECTION (SECURE)
 # =========================
 
-PASS_FILE="$HOME/.nettool_pass"
+PASS_FILE="$HOME/.kecembung_pass"
 
 mkdir -p "$(dirname "$PASS_FILE")"
 
@@ -778,7 +646,7 @@ if [ ! -f "$PASS_FILE" ]; then
 fi
 
 echo ""
-read -s -p "Masukkan Password NETTOOLS: " input
+read -s -p "Masukkan Password KECEMBUNG: " input
 echo ""
 
 if [ -z "$input" ]; then
@@ -805,12 +673,12 @@ check_update
 # 💾 STORAGE SYSTEM
 # =========================
 storage_mode="local"
-storage_path="$HOME/nettools_logs"
+storage_path="$HOME/kecembung_logs"
 
 USB_PATH=""
 USB_SELECTED=0
 
-SCENARIO_DIR="$HOME/nettools_scenarios"
+SCENARIO_DIR="$HOME/kecembung_scenarios"
 mkdir -p "$SCENARIO_DIR"
 
 init_storage() {
@@ -846,7 +714,7 @@ log_save() {
     return 1
   fi
 
-  echo "[$(date '+%F %T')] $1" >> "$LOG_DIR/nettools_log.txt" 2>/dev/null
+  echo "[$(date '+%F %T')] $1" >> "$LOG_DIR/kecembung_log.txt" 2>/dev/null
   
   if [ $? -ne 0 ]; then
     echo "[!] Failed to write log"
@@ -1221,7 +1089,7 @@ cmd_storage_local() {
   clear
 
   storage_mode="local"
-  storage_path="$HOME/nettools_logs"
+  storage_path="$HOME/kecembung_logs"
   mkdir -p "$storage_path"
 
   echo "[✔] Local Storage Active"
@@ -1242,7 +1110,7 @@ cmd_storage_usb() {
   fi
 
   storage_mode="usb"
-  storage_path="$USB_PATH/NETTOOLS"
+  storage_path="$USB_PATH/KECEMBUNG"
   mkdir -p "$storage_path"
 
   echo ""
@@ -1302,7 +1170,7 @@ cmd_storage_save_log() {
     return
   fi
 
-  LOG_SRC="$LOG_DIR/nettools_log.txt"
+  LOG_SRC="$LOG_DIR/kecembung_log.txt"
 
   if [ ! -f "$LOG_SRC" ]; then
     echo "[!] Log file belum ada"
@@ -1391,11 +1259,11 @@ cmd_usb_workspace() {
     return
   fi
 
-  mkdir -p "$USB_PATH/NETTOOLS/logs"
-  mkdir -p "$USB_PATH/NETTOOLS/reports"
+  mkdir -p "$USB_PATH/KECEMBUNG/logs"
+  mkdir -p "$USB_PATH/KECEMBUNG/reports"
 
   echo "[✔] Workspace created"
-  echo "[~] NETTOOLS directory ready"
+  echo "[~] KECEMBUNG directory ready"
 
   echo ""
   read -p "Tekan ENTER untuk kembali..."
@@ -1669,7 +1537,7 @@ cmd_ai_chat_start() {
 
   [ -z "$model" ] && return
   
-  SYSTEM_PROMPT="Kamu adalah NETTOOLS AI Assistant.
+  SYSTEM_PROMPT="Kamu adalah KECEMBUNG AI Assistant..
 
   Tugas kamu:
   - membantu networking
@@ -2185,9 +2053,10 @@ while true; do
   echo -e "${CYAN}=========================${NC}"
   echo ""
   if command -v figlet >/dev/null 2>&1; then
-    figlet NETTOOLS
+    figlet BUNG
+    echo "Kecembung Network Toolkit"
   else
-    echo -e "${GREEN}        NETTOOLS${NC}"
+    echo -e "${GREEN}        KECEMBUNG${NC}"
   fi
   echo ""
   echo -e "${CYAN}=========================${NC}"
@@ -2679,7 +2548,7 @@ while true; do
     # 🚪 EXIT
     # =====================
     6)
-      echo -e "${RED}Exiting NETTOOLS...${NC}"
+      echo -e "${RED}Exiting KECEMBUNG...${NC}"
 
       pkill -P $$ 2>/dev/null
      
@@ -2697,4 +2566,3 @@ while true; do
 
 
 done
-

@@ -13,7 +13,7 @@ NC='\033[0m'
 # =========================
 # 📁 SCENARIO DIR
 # =========================
-SCENARIO_DIR="$HOME/nettools_scenarios"
+SCENARIO_DIR="$HOME/kecembung_scenarios"
 mkdir -p "$SCENARIO_DIR"
 
 # =========================
@@ -149,10 +149,10 @@ cmd_usb_delete
 # =========================
 
 AI_SCENARIO_PROMPT="
-Kamu adalah generator NETTOOLS scenario.
+Kamu adalah generator KECEMBUNG scenario.
 
 Tugas:
-- ubah request user menjadi daftar command NETTOOLS
+- ubah request user menjadi daftar command KECEMBUNG
 - output HANYA command
 - satu command per baris
 - jangan jelaskan apapun
@@ -208,7 +208,7 @@ while true; do
   echo -e "${GREEN}   SCENARIO BUILDER${NC}"
   echo -e "${CYAN}=========================${NC}"
   echo "1. Custom (manual input)"
-  echo "2. From Nettool (select list)"
+  echo "2. From Kecembung (select list)"
   echo "3. AI Scenario"
   echo "4. Delete Scenario"
   echo "5. Back"
@@ -262,7 +262,7 @@ while true; do
       ;;
 
     # =========================
-    # 📦 FROM NETTOOL MODE
+    # 📦 FROM KECEMBUNG MODE
     # =========================
     2)
       echo -e "${CYAN}=========================${NC}"
@@ -288,7 +288,7 @@ while true; do
       > "$FILE"
 
       echo -e "${CYAN}=========================${NC}"
-      echo -e "${GREEN} NETTOOL COMMAND LIST${NC}"
+      echo -e "${GREEN} KECEMBUNG COMMAND LIST${NC}"
       echo -e "${CYAN}=========================${NC}"
 
       last_category=""
@@ -467,4 +467,3 @@ OUTPUT:
   esac
 
 done
-

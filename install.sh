@@ -28,14 +28,9 @@ BASE_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
 # 📌 VERSION
 # =========================
 
-echo "SCRIPT_DIR = $SCRIPT_DIR"
-echo "VERSION_FILE = $VERSION_FILE"
+NETTOOL_VERSION=$(curl -fsSL "$BASE_URL/version.txt" 2>/dev/null | tr -d '[:space:]')
 
-VERSION_FILE="$SCRIPT_DIR/version.txt"
-
-if [ -f "$VERSION_FILE" ]; then
-  NETTOOL_VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
-else
+if [ -z "$NETTOOL_VERSION" ]; then
   NETTOOL_VERSION="UNKNOWN"
 fi
 
