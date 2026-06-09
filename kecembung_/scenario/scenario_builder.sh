@@ -11,20 +11,36 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # =========================
+# 📋 SOURCE MODE FLAGS
+# =========================
+MODE_FILE="$HOME/.kecembung_mode"
+
+AI_DETECT_FLAG=0
+AI_TRAIN_FLAG=0
+AI_CHAT_FLAG=0
+SCENARIO_FLAG=0
+OLLAMA_FLAG=0
+
+if [ -f "$MODE_FILE" ]; then
+  source "$MODE_FILE"
+  AI_DETECT_FLAG="${AI_DETECT:-0}"
+  AI_TRAIN_FLAG="${AI_TRAIN:-0}"
+  AI_CHAT_FLAG="${AI_CHAT:-0}"
+  SCENARIO_FLAG="${SCENARIO:-0}"
+  OLLAMA_FLAG="${OLLAMA:-0}"
+fi
+
+# =========================
 # 📁 SCENARIO DIR
 # =========================
-SCENARIO_DIR="$HOME/kecembung_scenarios"
+SCENARIO_DIR="$HOME/.kecembung/scenarios"
 mkdir -p "$SCENARIO_DIR"
 
 # =========================
-# 📦 LABEL (USER VIEW)
+# 📂 CATEGORY + LABEL + COMMAND (FULL LIST)
 # =========================
 
-# =========================
-# 📂 CATEGORY
-# =========================
-
-categories=(
+all_categories=(
 "IP TOOLS"
 "IP TOOLS"
 "IP TOOLS"
@@ -63,7 +79,7 @@ categories=(
 "USB TOOLS"
 )
 
-labels=(
+all_labels=(
 "Lihat IP"
 "Scan Jaringan"
 "Ping IP"
@@ -102,10 +118,7 @@ labels=(
 "USB Delete"
 )
 
-# =========================
-# 📦 COMMAND (SYSTEM)
-# =========================
-commands=(
+all_commands=(
 cmd_lihat_ip
 cmd_scan_jaringan
 cmd_ping_ip
@@ -145,10 +158,47 @@ cmd_usb_delete
 )
 
 # =========================
-# 🧠 AI SCENARIO PROMPT
+# 🔧 BUILD ACTIVE LIST (filter AI kalau flag off)
 # =========================
 
-AI_SCENARIO_PROMPT="
+categories=()
+labels=()
+commands=()
+
+for i in "${!all_commands[@]}"; do
+  cat="${all_categories[$i]}"
+  cmd="${all_commands[$i]}"
+
+  # Filter AI commands berdasarkan flag
+  if [ "$cat" = "AI TOOLS" ]; then
+    # cmd_ai_train → butuh AI_TRAIN_FLAG
+    if [ "$cmd" = "cmd_ai_train" ] && [ "$AI_TRAIN_FLAG" -ne 1 ]; then
+      continue
+    fi
+    # cmd_ai_* lainnya → butuh AI_DETECT_FLAG
+    if [ "$cmd" != "cmd_ai_train" ] && [ "$AI_DETECT_FLAG" -ne 1 ]; then
+      continue
+    fi
+  fi
+
+  categories+=("$cat")
+  labels+=("${all_labels[$i]}")
+  commands+=("$cmd")
+done
+
+# =========================
+# 🧠 AI SCENARIO PROMPT (whitelist dinamis)
+# =========================
+
+build_ai_prompt() {
+  local whitelist=""
+
+  for cmd in "${commands[@]}"; do
+    whitelist="$whitelist
+$cmd"
+  done
+
+  echo "
 Kamu adalah generator KECEMBUNG scenario.
 
 Tugas:
@@ -159,44 +209,9 @@ Tugas:
 - jangan gunakan command selain whitelist
 
 Whitelist command:
-
-cmd_lihat_ip
-cmd_scan_jaringan
-cmd_ping_ip
-cmd_set_ip_manual
-cmd_routing
-cmd_dns_check
-cmd_internet_check
-cmd_scan_ssh
-cmd_ssh_connect
-cmd_reset_ip
-
-cmd_tcp_scan_port
-cmd_tcp_service_detection
-cmd_tcp_range_scan
-cmd_tcp_specific_port
-cmd_tcp_local_ports
-cmd_tcp_banner_grab
-
-cmd_ai_webcam_all
-cmd_ai_webcam_person
-cmd_ai_rtsp
-cmd_ai_image
-cmd_ai_video
-cmd_ai_train
-cmd_ai_run
-
-cmd_storage_local
-cmd_storage_usb
-cmd_storage_install
-cmd_storage_save_log
-
-cmd_usb_detect
-cmd_usb_select
-cmd_usb_workspace
-cmd_usb_read
-cmd_usb_delete
+$whitelist
 "
+}
 
 # =========================
 # 🚀 MAIN LOOP
@@ -209,12 +224,33 @@ while true; do
   echo -e "${CYAN}=========================${NC}"
   echo "1. Custom (manual input)"
   echo "2. From Kecembung (select list)"
-  echo "3. AI Scenario"
-  echo "4. Delete Scenario"
-  echo "5. Back"
+
+  # Tampilkan AI Scenario hanya kalau Ollama aktif
+  if [ "$OLLAMA_FLAG" -eq 1 ]; then
+    echo "3. AI Scenario"
+    echo "4. Delete Scenario"
+    echo "5. Back"
+  else
+    echo "3. Delete Scenario"
+    echo "4. Back"
+  fi
+
   echo -e "${CYAN}=========================${NC}"
 
   read -p "Select mode: " mode
+
+  # Remap opsi kalau OLLAMA_FLAG=0 (tidak ada menu AI Scenario)
+  if [ "$OLLAMA_FLAG" -ne 1 ]; then
+    case $mode in
+      3) mode="__delete" ;;
+      4) mode="__back"   ;;
+    esac
+  else
+    case $mode in
+      4) mode="__delete" ;;
+      5) mode="__back"   ;;
+    esac
+  fi
 
   case $mode in
 
@@ -223,15 +259,19 @@ while true; do
     # =========================
     1)
       echo -e "${CYAN}=========================${NC}"
-      read -p "👉 Nama scenario (contoh: tcp_scan_home): " scen_name
+      IFS= read -r -p "👉 Nama scenario (tanpa spasi, pakai _): " scen_name
+
+      scen_name=$(echo "$scen_name" | xargs)
 
       if [ -z "$scen_name" ]; then
         echo -e "${RED}[!] Nama tidak boleh kosong${NC}"
+        read -p "ENTER..."
         continue
       fi
 
-      if [[ "$scen_name" =~ [[:space:]] ]]; then
-        echo -e "${RED}[!] Tidak boleh pakai spasi, gunakan _${NC}"
+      if [[ ! "$scen_name" =~ ^[a-zA-Z0-9_]+$ ]]; then
+        echo -e "${RED}[!] Nama hanya boleh huruf, angka, dan underscore (_)${NC}"
+        read -p "ENTER..."
         continue
       fi
 
@@ -239,21 +279,43 @@ while true; do
       > "$FILE"
 
       echo -e "${YELLOW}[~] CUSTOM MODE${NC}"
-      echo "Type command (cmd_*), type 'done' to finish"
+      echo "Ketik command (cmd_*), ketik 'done' untuk selesai"
+      echo ""
+      echo "Command tersedia:"
+
+      last_category=""
+      for i in "${!commands[@]}"; do
+        cur_cat="${categories[$i]}"
+        if [ "$cur_cat" != "$last_category" ]; then
+          echo ""
+          echo -e "${CYAN}[$cur_cat]${NC}"
+          last_category="$cur_cat"
+        fi
+        echo -e "  ${YELLOW}${commands[$i]}${NC} → ${labels[$i]}"
+      done
+
+      echo ""
 
       while true; do
-        read -p "cmd> " cmd
+        IFS= read -r -p "cmd> " cmd
 
         if [ "$cmd" = "done" ]; then
           break
         fi
 
-        if declare -f "$cmd" > /dev/null; then
+        [ -z "$cmd" ] && continue
+
+        # Validasi command ada di active list
+        valid=0
+        for c in "${commands[@]}"; do
+          [ "$c" = "$cmd" ] && valid=1 && break
+        done
+
+        if [ "$valid" -eq 1 ]; then
           echo "$cmd" >> "$FILE"
-          echo -e "${GREEN}[✔] added: ${labels[$cmd]}${NC}" 2>/dev/null
           echo -e "${GREEN}[✔] added: $cmd${NC}"
         else
-          echo -e "${RED}[X] unknown command: $cmd${NC}"
+          echo -e "${RED}[X] unknown/disabled command: $cmd${NC}"
         fi
       done
 
@@ -271,17 +333,15 @@ while true; do
       scenario_name=$(echo "$scenario_name" | xargs)
 
       if [ -z "$scenario_name" ]; then
-          echo "[!] Nama tidak boleh kosong"
-    	  continue
+        echo "[!] Nama tidak boleh kosong"
+        read -p "ENTER..."
+        continue
       fi
 
       if [[ ! "$scenario_name" =~ ^[a-zA-Z0-9_]+$ ]]; then
-    	  echo "[!] Nama hanya boleh huruf, angka, dan underscore (_)"
-    	  continue
-      fi
-
-      if [[ "$scenario_name" =~ [[:space:]] ]]; then
-        echo -e "${RED}[!] Tidak boleh pakai spasi, gunakan _${NC}"
+        echo "[!] Nama hanya boleh huruf, angka, dan underscore (_)"
+        read -p "ENTER..."
+        continue
       fi
 
       FILE="$SCENARIO_DIR/${scenario_name}.sh"
@@ -294,7 +354,6 @@ while true; do
       last_category=""
 
       for i in "${!commands[@]}"; do
-
         current_category="${categories[$i]}"
 
         if [ "$current_category" != "$last_category" ]; then
@@ -306,17 +365,25 @@ while true; do
         echo -e "${YELLOW}$i${NC}. ${labels[$i]}"
       done
 
+      echo ""
       echo -e "${CYAN}=========================${NC}"
-      echo "Select numbers (example: 0 3 5), type 'done'"
+      echo "Pilih nomor (contoh: 0 3 5), ketik 'done' untuk selesai"
 
       while true; do
-        read -p "select> " input
+        IFS= read -r -p "select> " input
 
         if [ "$input" = "done" ]; then
           break
         fi
 
+        [ -z "$input" ] && continue
+
         for num in $input; do
+          if ! [[ "$num" =~ ^[0-9]+$ ]]; then
+            echo -e "${RED}[X] bukan angka: $num${NC}"
+            continue
+          fi
+
           cmd="${commands[$num]}"
           label="${labels[$num]}"
 
@@ -327,7 +394,6 @@ while true; do
               echo "$cmd" >> "$FILE"
               echo -e "${GREEN}[✔] added: $label${NC}"
             fi
-            echo -e "${GREEN}[✔] added: $label${NC}"
           else
             echo -e "${RED}[X] invalid index: $num${NC}"
           fi
@@ -337,8 +403,17 @@ while true; do
       echo -e "${CYAN}[✔] saved: $FILE${NC}"
       read -p "ENTER..."
       ;;
-    
+
+    # =========================
+    # 🤖 AI SCENARIO (hanya kalau OLLAMA_FLAG=1)
+    # =========================
     3)
+      # Fallback safety — seharusnya tidak tercapai kalau OLLAMA_FLAG=0
+      if [ "$OLLAMA_FLAG" -ne 1 ]; then
+        echo -e "${RED}[!] invalid option${NC}"
+        sleep 1
+        continue
+      fi
 
       if ! command -v ollama >/dev/null 2>&1; then
         echo "[!] Ollama belum terinstall"
@@ -350,19 +425,30 @@ while true; do
       echo -e "${GREEN}      AI SCENARIO${NC}"
       echo -e "${CYAN}=========================${NC}"
 
-      read -p "Nama scenario: " scenario_name
+      IFS= read -r -p "Nama scenario: " scenario_name
+
+      scenario_name=$(echo "$scenario_name" | xargs)
 
       if [ -z "$scenario_name" ]; then
         echo "[!] Nama tidak boleh kosong"
+        read -p "ENTER..."
+        continue
+      fi
+
+      if [[ ! "$scenario_name" =~ ^[a-zA-Z0-9_]+$ ]]; then
+        echo "[!] Nama hanya boleh huruf, angka, dan underscore (_)"
+        read -p "ENTER..."
         continue
       fi
 
       FILE="$SCENARIO_DIR/${scenario_name}.sh"
 
       echo ""
-      read -p "Request AI: " user_prompt
+      IFS= read -r -p "Request AI: " user_prompt
 
       [ -z "$user_prompt" ] && continue
+
+      AI_SCENARIO_PROMPT=$(build_ai_prompt)
 
       FULL_PROMPT="$AI_SCENARIO_PROMPT
 
@@ -387,40 +473,52 @@ OUTPUT:
       echo ""
       echo -e "${CYAN}Generated Scenario:${NC}"
       echo ""
-
       echo "$response"
-
       echo ""
-      read -p "Save scenario? (YES): " confirm
+
+      IFS= read -r -p "Save scenario? (YES): " confirm
 
       [ "$confirm" != "YES" ] && continue
 
       > "$FILE"
 
       while IFS= read -r line; do
-
         line=$(echo "$line" | xargs)
 
         [[ ! "$line" =~ ^cmd_ ]] && continue
 
-        echo "$line" >> "$FILE"
+        # Validasi hanya command di active list yang disimpan
+        valid=0
+        for c in "${commands[@]}"; do
+          [ "$c" = "$line" ] && valid=1 && break
+        done
+
+        if [ "$valid" -eq 1 ]; then
+          echo "$line" >> "$FILE"
+        else
+          echo -e "${YELLOW}[!] skipped (disabled/unknown): $line${NC}"
+        fi
 
       done <<< "$response"
 
       echo ""
       echo "[✔] Scenario saved: $FILE"
-
       read -p "ENTER..."
       ;;
-    
-    4)
+
+    # =========================
+    # 🗑️ DELETE SCENARIO
+    # =========================
+    __delete)
       echo -e "${CYAN}=========================${NC}"
       echo -e "${RED}   DELETE SCENARIO${NC}"
       echo -e "${CYAN}=========================${NC}"
 
+      shopt -s nullglob
       files=("$SCENARIO_DIR"/*.sh)
+      shopt -u nullglob
 
-      if [ ! -e "${files[0]}" ]; then
+      if [ ${#files[@]} -eq 0 ]; then
         echo -e "${RED}[!] Tidak ada scenario${NC}"
         read -p "ENTER untuk kembali..."
         continue
@@ -431,17 +529,24 @@ OUTPUT:
       done
 
       echo -e "${CYAN}=========================${NC}"
-      read -p "👉 Pilih nomor scenario: " del_index
+      IFS= read -r -p "👉 Pilih nomor scenario: " del_index
+
+      if ! [[ "$del_index" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}[!] Bukan angka${NC}"
+        read -p "ENTER untuk kembali..."
+        continue
+      fi
 
       target="${files[$del_index]}"
 
       if [ -z "$target" ] || [ ! -f "$target" ]; then
         echo -e "${RED}[!] Pilihan tidak valid${NC}"
         read -p "ENTER untuk kembali..."
+        continue
       fi
 
       echo -e "${RED}[!] Akan menghapus: $(basename "$target")${NC}"
-      read -p "Ketik YES untuk konfirmasi: " confirm
+      IFS= read -r -p "Ketik YES untuk konfirmasi: " confirm
 
       if [ "$confirm" = "YES" ]; then
         rm -f "$target"
@@ -456,7 +561,7 @@ OUTPUT:
     # =========================
     # 🔙 BACK
     # =========================
-    5)
+    __back)
       break
       ;;
 

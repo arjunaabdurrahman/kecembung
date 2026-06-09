@@ -118,23 +118,24 @@ mkdir -p "$LOG_DIR"
 mkdir -p "$AI_HISTORY_DIR"
 
 # =========================
-# ✅ VALIDATION
+# 📋 SOURCE MODE FLAG
 # =========================
 
-if [ ! -f "$AI_DETECT" ]; then
-    echo "[!] ai_detect.py tidak ditemukan"
-fi
+MODE_FILE="$HOME/.kecembung_mode"
 
-if [ ! -f "$AI_TRAIN" ]; then
-    echo "[!] ai_train.py tidak ditemukan"
-fi
+AI_DETECT_FLAG=0
+AI_TRAIN_FLAG=0
+AI_CHAT_FLAG=0
+SCENARIO_FLAG=0
+OLLAMA_FLAG=0
 
-if [ ! -f "$SCENARIO_BUILDER" ]; then
-    echo "[!] scenario_builder.sh tidak ditemukan"
-fi
-
-if [ ! -x "$AI_PYTHON" ]; then
-    echo "[!] Python AI environment tidak ditemukan"
+if [ -f "$MODE_FILE" ]; then
+  source "$MODE_FILE"
+  AI_DETECT_FLAG="${AI_DETECT:-0}"
+  AI_TRAIN_FLAG="${AI_TRAIN:-0}"
+  AI_CHAT_FLAG="${AI_CHAT:-0}"
+  SCENARIO_FLAG="${SCENARIO:-0}"
+  OLLAMA_FLAG="${OLLAMA:-0}"
 fi
 
 # =========================
@@ -159,7 +160,6 @@ safe_kill() {
     return
   fi
 
-  # mark dulu biar sistem lain stop intervensi
   PROCESS_MAIN=""
   PROCESS_CHILD=""
 
@@ -193,7 +193,7 @@ register_child() {
 }
 
 # =========================
-# 🧠 PID SAFETY LAYER 
+# 🧠 PID SAFETY LAYER
 # =========================
 
 is_alive() {
@@ -232,7 +232,7 @@ set_child() {
 }
 
 # =========================
-# SAFE AI RUN 
+# SAFE AI RUN
 # =========================
 
 safe_ai() {
@@ -289,7 +289,7 @@ AI_HISTORY_DIR="$HOME/kecembung_ai_history"
 mkdir -p "$AI_HISTORY_DIR"
 
 # =========================
-# SAFE MENU RUN 
+# SAFE MENU RUN
 # =========================
 safe_menu() {
   set +e
@@ -304,7 +304,7 @@ safe_menu() {
 }
 
 # =========================
-# SAFE BACKGROUND RUN 
+# SAFE BACKGROUND RUN
 # =========================
 safe_bg() {
   set +e
@@ -316,7 +316,6 @@ safe_bg() {
 
   echo "[~] Background process started (PID: $pid)"
 
-  # update watchdog sekali biar gak dianggap freeze
   echo "$(date +%s)" > "$WATCHDOG_FILE"
 
   echo $pid
@@ -337,10 +336,10 @@ SCRIPT_URL="$REPO_URL/kecembung"
 
 UPDATE_URL="$REPO_URL/update.sh"
 
-AI_DETECT_URL="$REPO_URL/kecembung/ai/ai_detect.py"
-AI_TRAIN_URL="$REPO_URL/kecembung/ai/ai_train.py"
+AI_DETECT_URL="$REPO_URL/kecembung_/ai/ai_detect.py"
+AI_TRAIN_URL="$REPO_URL/kecembung_/ai/ai_train.py"
 
-SCENARIO_URL="$REPO_URL/kecembung/scenario/scenario_builder.sh"
+SCENARIO_URL="$REPO_URL/kecembung_/scenario/scenario_builder.sh"
 
 INSTALLER_URL="$REPO_URL/install.sh"
 
@@ -457,13 +456,11 @@ check_update() {
 
   echo "[~] Mengecek update..."
 
-  # cek internet cepat
   ping -c 1 8.8.8.8 &>/dev/null || {
     echo "[!] Tidak ada koneksi internet"
     return
   }
 
-  # cek version URL valid dulu (HTTP STATUS CHECK)
   HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --max-time 5 "$VERSION_URL")
 
   if [ "$HTTP_STATUS" != "200" ]; then
@@ -472,13 +469,12 @@ check_update() {
   fi
 
   LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL")
-  
+
   if [ -z "$LATEST_VERSION" ]; then
     echo "[!] Gagal ambil versi terbaru (kosong)"
     return
   fi
 
-  # normalisasi
   LATEST_VERSION=$(echo "$LATEST_VERSION" | tr -d ' \n\r')
 
   if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
@@ -552,70 +548,6 @@ do_update() {
 }
 
 # =========================
-# 🧠 PYTHON ENV AUTO DETECT + AUTO CREATE
-# =========================
-ENV_PATH="$HOME/kecembung-env"
-
-if [ ! -d "$ENV_PATH" ] || \
-   [ ! -f "$ENV_PATH/bin/python" ] || \
-   [ ! -f "$ENV_PATH/bin/pip" ]; then
-
-    echo "[~] AI environment tidak valid, memperbaiki..."
-
-    # safety check biar gak hapus path aneh
-    if [[ "$ENV_PATH" == "$HOME/"* ]]; then
-        rm -rf "$ENV_PATH"
-    else
-        echo "[!] ENV_PATH tidak aman"
-        exit 1
-    fi
-
-    # buat ulang environment
-    python3 -m venv "$ENV_PATH" || {
-        echo "[!] Gagal membuat virtual environment"
-        exit 1
-    }
-
-    echo "[~] Installing AI dependencies..."
-
-    "$ENV_PATH/bin/pip" install --upgrade pip || exit 1
-
-    "$ENV_PATH/bin/pip" install ultralytics opencv-python \
-        --no-cache-dir || exit 1
-
-    "$ENV_PATH/bin/pip" install torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/cpu || exit 1
-fi
-
-# =========================
-# 🔍 VALIDATION
-# =========================
-
-PYTHON="$ENV_PATH/bin/python"
-
-if [ ! -x "$PYTHON" ]; then
-    echo "[!] Python environment tidak valid"
-    exit 1
-fi
-
-# cek apakah library benar-benar bisa diimport
-if ! "$PYTHON" -c "import ultralytics, cv2" >/dev/null 2>&1; then
-    echo "[!] Dependency Python tidak lengkap, memperbaiki..."
-
-    "$ENV_PATH/bin/pip" install ultralytics opencv-python \
-        --no-cache-dir || exit 1
-
-    "$ENV_PATH/bin/pip" install torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/cpu || exit 1
-
-    # cek ulang
-    if ! "$PYTHON" -c "import ultralytics, cv2" >/dev/null 2>&1; then
-        echo "[!] Gagal memperbaiki dependency"
-        exit 1
-    fi
-fi
-
-# =========================
 # 🔐 SYSTEM CHECK
 # =========================
 
@@ -625,7 +557,7 @@ if ! command -v sudo >/dev/null 2>&1; then
 fi
 
 # =========================
-# 🔐 PASSWORD PROTECTION (SECURE)
+# 🔐 PASSWORD PROTECTION
 # =========================
 
 PASS_FILE="$HOME/.kecembung_pass"
@@ -636,7 +568,6 @@ if [ -f "$PASS_FILE" ]; then
   chmod 600 "$PASS_FILE"
 fi
 
-# pastikan folder home valid dulu
 PASS_DIR="$(dirname "$PASS_FILE")"
 mkdir -p "$PASS_DIR"
 
@@ -694,12 +625,12 @@ init_storage() {
       storage_mode="local"
       storage_path="$LOG_DIR"
     else
-      storage_path="$USB_PATH/NETTOOLS"
+      storage_path="$USB_PATH/KECEMBUNG"
     fi
   fi
 
   if [ -z "$storage_path" ] || [ "$storage_path" = "/" ]; then
-    storage_path="$HOME/nettools_logs"
+    storage_path="$HOME/kecembung_logs"
   fi
 
   mkdir -p "$storage_path"
@@ -715,24 +646,18 @@ log_save() {
   fi
 
   echo "[$(date '+%F %T')] $1" >> "$LOG_DIR/kecembung_log.txt" 2>/dev/null
-  
+
   if [ $? -ne 0 ]; then
     echo "[!] Failed to write log"
   fi
 }
 
 # =========================
-# COMMAND MAP
-# =========================
-
-# =========================
 # COMMAND MAP - IP TOOLS
 # =========================
 
 cmd_lihat_ip() {
-
   clear
-  
   print_section "NETWORK INTERFACE STATUS"
 
   ip -brief address | while read -r line; do
@@ -745,7 +670,7 @@ cmd_lihat_ip() {
     print_keyval "IP" "${ipaddr:-NONE}"
     echo ""
   done
-  
+
   read -p "Tekan ENTER untuk kembali..."
 }
 
@@ -769,14 +694,12 @@ cmd_scan_jaringan() {
   print_info "Scanning network... tunggu sebentar"
   echo ""
 
-  # langsung tampilkan hasil dulu (debug aman)
   nmap -sn "$net" | awk '
     /Nmap scan report/ {print "\n- " $NF}
     /MAC Address/ {print "  MAC: " $0}
   '
 
   echo ""
-  
   read -p "Tekan ENTER untuk kembali..."
 }
 
@@ -806,7 +729,7 @@ cmd_ping_ip() {
   fi
 
   print_keyval "Avg Latency" "${avg:-unknown} ms"
-  
+
   read -p "Tekan ENTER untuk kembali..."
 }
 
@@ -831,7 +754,7 @@ cmd_set_ip_manual() {
   print_keyval "Interface" "$koneksi"
   print_keyval "IP Baru" "$ipbaru"
   print_keyval "Gateway" "$gateway"
-  
+
   read -p "Tekan ENTER untuk kembali..."
 }
 
@@ -850,7 +773,7 @@ cmd_routing() {
   ip route | grep -v default | while read -r line; do
     echo "- $line"
   done
-  
+
   echo ""
   read -p "Tekan ENTER untuk kembali..."
 }
@@ -868,7 +791,7 @@ cmd_dns_check() {
   echo "$dns" | while read -r line; do
     echo "- $line"
   done
-  
+
   echo ""
   read -p "Tekan ENTER untuk kembali..."
 }
@@ -890,7 +813,7 @@ cmd_internet_check() {
   fi
 
   print_keyval "Latency" "${avg:-unknown} ms"
-  
+
   echo ""
   read -p "Tekan ENTER untuk kembali..."
 }
@@ -914,7 +837,7 @@ cmd_scan_ssh() {
   nmap -p 22 --open "$net" | awk '
     /Nmap scan report/ {print "- " $NF}
   '
-  
+
   echo ""
   read -p "Tekan ENTER untuk kembali..."
 }
@@ -935,7 +858,7 @@ cmd_ssh_connect() {
   echo ""
 
   ssh "$user@$target"
-  
+
   echo ""
   read -p "Tekan ENTER untuk kembali..."
 }
@@ -969,7 +892,7 @@ cmd_reset_ip() {
   sudo nmcli con up "$koneksi"
 
   print_success "IP RESET SUCCESS"
-  
+
   echo ""
   read -p "Tekan ENTER untuk kembali..."
 }
@@ -1125,9 +1048,9 @@ cmd_storage_install() {
   clear
 
   read -p "Install apa? (contoh: nmap): " pkg
-  
+
   echo ""
-  
+
   if [ -z "$pkg" ]; then
     echo "[!] Tidak ada input"
 
@@ -1202,7 +1125,6 @@ cmd_usb_detect() {
   clear
 
   echo ""
-
   echo "[~] Available USB devices:"
   echo ""
 
@@ -1216,7 +1138,6 @@ cmd_usb_select() {
   clear
 
   echo ""
-
   echo "[~] Select USB:"
   lsblk -o NAME,SIZE,MOUNTPOINT | grep "/media\|/run/media"
   echo ""
@@ -1345,7 +1266,7 @@ cmd_ai_webcam_all() {
   init_storage
   mkdir -p "$storage_path/captures"
 
-  safe_ai 0 "$PYTHON" "$AI_DETECT" 0 "$storage_path/captures" all
+  safe_ai 0 "$AI_PYTHON" "$AI_DETECT" 0 "$storage_path/captures" all
 
   log_save "AI Webcam All"
 
@@ -1362,7 +1283,7 @@ cmd_ai_webcam_person() {
   init_storage
   mkdir -p "$storage_path/captures"
 
-  safe_ai 0 "$PYTHON" "$AI_DETECT" 0 "$storage_path/captures" person
+  safe_ai 0 "$AI_PYTHON" "$AI_DETECT" 0 "$storage_path/captures" person
 
   log_save "AI Webcam Person"
 
@@ -1381,7 +1302,7 @@ cmd_ai_rtsp() {
 
   mkdir -p "$storage_path/captures"
 
-  safe_ai 0 "$PYTHON" "$AI_DETECT" "$rtsp" "$storage_path/captures" all
+  safe_ai 0 "$AI_PYTHON" "$AI_DETECT" "$rtsp" "$storage_path/captures" all
 
   log_save "AI CCTV RTSP"
 
@@ -1400,7 +1321,7 @@ cmd_ai_image() {
 
   mkdir -p "$storage_path/captures"
 
-  safe_ai 120 "$PYTHON" "$AI_DETECT" "$img" "$storage_path/captures" all
+  safe_ai 120 "$AI_PYTHON" "$AI_DETECT" "$img" "$storage_path/captures" all
 
   log_save "AI Image Detect"
 
@@ -1419,7 +1340,7 @@ cmd_ai_video() {
 
   mkdir -p "$storage_path/captures"
 
-  safe_ai 120 "$PYTHON" "$AI_DETECT" "$vid" "$storage_path/captures" all
+  safe_ai 120 "$AI_PYTHON" "$AI_DETECT" "$vid" "$storage_path/captures" all
 
   log_save "AI Video Detect"
 
@@ -1455,7 +1376,7 @@ cmd_ai_train() {
   read -p "YES untuk training: " confirm
   [ "$confirm" != "YES" ] && return
 
-  safe_ai 60 "$PYTHON" "$AI_TRAIN" "$data"
+  safe_ai 60 "$AI_PYTHON" "$AI_TRAIN" "$data"
 
   log_save "Custom AI Training"
 
@@ -1496,7 +1417,7 @@ cmd_ai_run() {
     src=0
   fi
 
-  safe_ai 60 "$PYTHON" "$AI_DETECT" "$src" "$storage_path/captures" all "$model"
+  safe_ai 60 "$AI_PYTHON" "$AI_DETECT" "$src" "$storage_path/captures" all "$model"
 
   log_save "Custom AI Run"
 
@@ -1523,9 +1444,9 @@ cmd_ai_chat_start() {
 
   echo ""
   IFS= read -r -p "Model: " model
-  
+
   [ -z "$model" ] && model="$AI_MODEL_DEFAULT"
-  
+
   real_model=$(ollama list | awk '{print $1}' | grep "^${model}\(:.*\)\?$" | head -n1)
 
   if [ -z "$real_model" ]; then
@@ -1536,7 +1457,7 @@ cmd_ai_chat_start() {
   model="$real_model"
 
   [ -z "$model" ] && return
-  
+
   SYSTEM_PROMPT="Kamu adalah KECEMBUNG AI Assistant..
 
   Tugas kamu:
@@ -1563,7 +1484,7 @@ cmd_ai_chat_start() {
   echo ""
   echo "[~] Ketik '/exit' untuk keluar"
   echo ""
-  
+
   CHAT_CONTEXT="$SYSTEM_PROMPT"
 
   while true; do
@@ -1571,7 +1492,7 @@ cmd_ai_chat_start() {
     echo "$(date +%s)" > "$WATCHDOG_FILE"
 
     IFS= read -r -p "You> " prompt
-    
+
     case "$prompt" in
 
         /clear)
@@ -1632,7 +1553,7 @@ cmd_ai_chat_start() {
     "
 
     CHAT_CONTEXT=$(printf "%s" "$CHAT_CONTEXT" | tail -c 16000)
-    
+
     echo ""
     echo "AI> $response"
     echo ""
@@ -1900,8 +1821,6 @@ run_command() {
   [ -z "$cmd" ] && return 0
 
   case "$cmd" in
-
-    # 🌐 IP
     cmd_lihat_ip) cmd_lihat_ip ;;
     cmd_scan_jaringan) cmd_scan_jaringan ;;
     cmd_ping_ip) cmd_ping_ip ;;
@@ -1912,16 +1831,12 @@ run_command() {
     cmd_scan_ssh) cmd_scan_ssh ;;
     cmd_ssh_connect) cmd_ssh_connect ;;
     cmd_reset_ip) cmd_reset_ip ;;
-
-    # 🔥 TCP
     cmd_tcp_scan_port) cmd_tcp_scan_port ;;
     cmd_tcp_service_detection) cmd_tcp_service_detection ;;
     cmd_tcp_range_scan) cmd_tcp_range_scan ;;
     cmd_tcp_specific_port) cmd_tcp_specific_port ;;
     cmd_tcp_local_ports) cmd_tcp_local_ports ;;
     cmd_tcp_banner_grab) cmd_tcp_banner_grab ;;
-
-    # 🤖 AI
     cmd_ai_webcam_all) cmd_ai_webcam_all ;;
     cmd_ai_webcam_person) cmd_ai_webcam_person ;;
     cmd_ai_rtsp) cmd_ai_rtsp ;;
@@ -1929,20 +1844,15 @@ run_command() {
     cmd_ai_video) cmd_ai_video ;;
     cmd_ai_train) cmd_ai_train ;;
     cmd_ai_run) cmd_ai_run ;;
-
-    # 💾 STORAGE
     cmd_storage_local) cmd_storage_local ;;
     cmd_storage_usb) cmd_storage_usb ;;
     cmd_storage_install) cmd_storage_install ;;
     cmd_storage_save_log) cmd_storage_save_log ;;
-
-    # 🔌 USB
     cmd_usb_detect) cmd_usb_detect ;;
     cmd_usb_select) cmd_usb_select ;;
     cmd_usb_workspace) cmd_usb_workspace ;;
     cmd_usb_read) cmd_usb_read ;;
     cmd_usb_delete) cmd_usb_delete ;;
-
     *)
       echo "[!] Unknown command: $cmd"
       return 1
@@ -1969,13 +1879,9 @@ run_scenario_file() {
   while IFS= read -r cmd || [ -n "$cmd" ]; do
     ((line++))
 
-    # skip kosong
     [ -z "$cmd" ] && continue
-
-    # skip comment
     [[ "$cmd" =~ ^# ]] && continue
 
-    # trim
     cmd=$(echo "$cmd" | xargs)
 
     [ -z "$cmd" ] && continue
@@ -1984,19 +1890,15 @@ run_scenario_file() {
 
     run_command "$cmd"
 
-    # STOP kalau recovery aktif
     if [ "$RECOVERY_MODE" -eq 1 ]; then
       echo "[!] Recovery aktif → stop scenario"
       break
     fi
 
-  done
+  done < "$file"
 
   echo "[✔] Scenario selesai"
   return 0
-  
-  echo ""
-  read -p "Tekan ENTER untuk kembali..."
 }
 
 # =========================
@@ -2007,7 +1909,6 @@ background_install() {
   for pkg in nmap dialog figlet; do
     if ! command -v "$pkg" >/dev/null 2>&1; then
       echo "[~] Installing $pkg (background)..."
-
       (
         sudo apt update -y >/dev/null 2>&1
         sudo apt install -y "$pkg" >/dev/null 2>&1
@@ -2025,10 +1926,8 @@ background_install
 
 while true; do
 
-  # update watchdog heartbeat
   write_heartbeat "MENU"
 
-  # global recovery handler
   if [ "$RETURN_TO_MAIN" -eq 1 ]; then
     reset_state
     clear
@@ -2050,6 +1949,31 @@ while true; do
     continue
   fi
 
+  # =========================
+  # 🔧 BUILD MAIN MENU
+  # =========================
+
+  main_items=()
+  main_actions=()
+
+  main_items+=("IP Tools");      main_actions+=("menu_ip")
+  main_items+=("TCP Tools");     main_actions+=("menu_tcp")
+  main_items+=("Storage Mode");  main_actions+=("menu_storage")
+
+  HAS_AI=0
+  [ "$AI_DETECT_FLAG" -eq 1 ] && HAS_AI=1
+  [ "$AI_TRAIN_FLAG"  -eq 1 ] && HAS_AI=1
+  [ "$AI_CHAT_FLAG"   -eq 1 ] && HAS_AI=1
+
+  [ "$HAS_AI"        -eq 1 ] && main_items+=("AI Tools")       && main_actions+=("menu_ai")
+  [ "$SCENARIO_FLAG" -eq 1 ] && main_items+=("Custom Scenario") && main_actions+=("menu_scenario")
+
+  main_items+=("Exit"); main_actions+=("do_exit")
+
+  # =========================
+  # TAMPILKAN MAIN MENU
+  # =========================
+
   echo -e "${CYAN}=========================${NC}"
   echo ""
   if command -v figlet >/dev/null 2>&1; then
@@ -2063,27 +1987,38 @@ while true; do
   echo -e "${YELLOW}Storage Mode : $storage_mode${NC}"
   echo -e "${BLUE}Path         : $storage_path${NC}"
   echo -e "${CYAN}=========================${NC}"
-  echo "1. IP Tools"
-  echo "2. TCP Tools"
-  echo "3. Storage Mode"
-  echo "4. AI Tools"
-  echo "5. Custom Scenario"
-  echo "6. Exit"
+
+  for i in "${!main_items[@]}"; do
+    echo "$((i+1)). ${main_items[$i]}"
+  done
+
   echo -e "${CYAN}=========================${NC}"
 
   IFS= read -r -p "Pilih menu: " main || continue
 
-  case $main in
+  if ! [[ "$main" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Invalid option${NC}"
+    continue
+  fi
+
+  action="${main_actions[$((main-1))]}"
+
+  if [ -z "$action" ]; then
+    echo -e "${RED}Invalid option${NC}"
+    continue
+  fi
+
+  case "$action" in
 
     # =====================
-    # 🌐 IP TOOLS 
+    # 🌐 IP TOOLS
     # =====================
-    1)
+    menu_ip)
       while true; do
 
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
-	fi
+        fi
 
         echo -e "${CYAN}=========================${NC}"
         echo -e "${GREEN}        IP TOOLS${NC}"
@@ -2097,64 +2032,24 @@ while true; do
         echo "7. Internet Check"
         echo "8. Scan SSH Device"
         echo "9. SSH Connect"
-	echo "10. Reset IP"
+        echo "10. Reset IP"
         echo "11. Kembali"
         echo -e "${CYAN}=========================${NC}"
 
         IFS= read -r -p "Pilih menu: " ipmenu || continue
 
         case $ipmenu in
-
-          1)
-  	    cmd_lihat_ip
-            log_save "Lihat IP"
-            ;;
-
-          2)
-    	    cmd_scan_jaringan
-    	    log_save "Scan jaringan"
-    	    ;;
-
-          3)
-            cmd_ping_ip
-            log_save "Ping IP"
-    	    ;;
-
-          4)
-    	    cmd_set_ip_manual
-    	    log_save "Set IP manual"
-    	    ;;
-
-          5)
-            cmd_routing
-    	    read -p "Tekan ENTER untuk kembali..."
-    	    ;;
-
-          6)
-    	    cmd_dns_check
-    	    ;;
-
-          7)
-            cmd_internet_check
-    	    ;;
-
-       	  8)
-    	    cmd_scan_ssh
-    	    ;;
-
-          9)
-    	    cmd_ssh_connect
-    	    ;;
-
-          10)
-             cmd_reset_ip
-             log_save "Reset IP DHCP"
-             ;;
-
-          11)
-             break
-             ;;
-
+          1)  cmd_lihat_ip;      log_save "Lihat IP" ;;
+          2)  cmd_scan_jaringan; log_save "Scan jaringan" ;;
+          3)  cmd_ping_ip;       log_save "Ping IP" ;;
+          4)  cmd_set_ip_manual; log_save "Set IP manual" ;;
+          5)  cmd_routing ;;
+          6)  cmd_dns_check ;;
+          7)  cmd_internet_check ;;
+          8)  cmd_scan_ssh ;;
+          9)  cmd_ssh_connect ;;
+          10) cmd_reset_ip; log_save "Reset IP DHCP" ;;
+          11) break ;;
         esac
 
       done
@@ -2163,12 +2058,12 @@ while true; do
     # =====================
     # 🔥 TCP TOOLS
     # =====================
-    2)
+    menu_tcp)
       while true; do
-      
+
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
-	fi
+        fi
 
         echo -e "${CYAN}=========================${NC}"
         echo -e "${GREEN}        TCP TOOLS${NC}"
@@ -2185,36 +2080,14 @@ while true; do
         IFS= read -r -p "Pilih menu: " tcpmenu || continue
 
         case $tcpmenu in
-
-   	  1)
-    	    cmd_tcp_scan_port
-    	    ;;
-
-  	  2)
-   	    cmd_tcp_service_detection
-    	    ;;
-
-  	  3)
-    	    cmd_tcp_range_scan
-    	    ;;
-
-  	  4)
-    	    cmd_tcp_specific_port
-    	    ;;
-
-  	  5)
-    	    cmd_tcp_local_ports
-    	    ;;
-
-  	  6)
-    	    cmd_tcp_banner_grab
-    	    ;;
-
-  	  7)
-    	    break
-    	    ;;
-
-	esac
+          1) cmd_tcp_scan_port ;;
+          2) cmd_tcp_service_detection ;;
+          3) cmd_tcp_range_scan ;;
+          4) cmd_tcp_specific_port ;;
+          5) cmd_tcp_local_ports ;;
+          6) cmd_tcp_banner_grab ;;
+          7) break ;;
+        esac
 
       done
       ;;
@@ -2222,20 +2095,20 @@ while true; do
     # =====================
     # 💾 STORAGE MODE
     # =====================
-    3)
+    menu_storage)
       while true; do
-     
+
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
-	fi
+        fi
 
         echo -e "${CYAN}=========================${NC}"
         echo -e "${YELLOW}     STORAGE MODE${NC}"
         echo -e "${CYAN}=========================${NC}"
         echo "1. Local Mode"
         echo "2. USB Mode"
-	echo "3. Installer"
-	echo "4. Save Log"
+        echo "3. Installer"
+        echo "4. Save Log"
         echo "5. USB Tools"
         echo "6. Kembali"
         echo -e "${CYAN}=========================${NC}"
@@ -2243,34 +2116,22 @@ while true; do
         IFS= read -r -p "Pilih menu: " smode || continue
 
         case $smode in
-
-          1)
-  	    cmd_storage_local
-  	    ;;
-
-	  2)
-  	    cmd_storage_usb
-  	    ;;
-
-	  3)
-  	    cmd_storage_install
-  	    ;;
-
-	  4)
-  	    cmd_storage_save_log
-  	    ;;
+          1) cmd_storage_local ;;
+          2) cmd_storage_usb ;;
+          3) cmd_storage_install ;;
+          4) cmd_storage_save_log ;;
 
           5)
             if [ "$INTERRUPTED" -eq 1 ]; then
               INTERRUPTED=0
               break
             fi
-            
+
             while true; do
-            
+
               if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-  	        break
-	      fi
+                break
+              fi
 
               echo -e "${CYAN}=========================${NC}"
               echo -e "${GREEN}      USB TOOLS${NC}"
@@ -2286,40 +2147,18 @@ while true; do
               IFS= read -r -p "Pilih menu: " usbmenu || continue
 
               case $usbmenu in
-
-                1)
-	          cmd_usb_detect
-  	     	  ;;
-
-		2)
-  		  cmd_usb_select
-  		  ;;
-
-		3)
-  		  cmd_usb_workspace
-  		  ;;
-
-	    	4)
-  		  cmd_usb_read
-  		  ;;
-
-		5)
-  		  cmd_usb_delete
-  		  ;;
-
-                6)
-                  break
-                  ;;
-
+                1) cmd_usb_detect ;;
+                2) cmd_usb_select ;;
+                3) cmd_usb_workspace ;;
+                4) cmd_usb_read ;;
+                5) cmd_usb_delete ;;
+                6) break ;;
               esac
 
             done
             ;;
 
-          6)
-            break
-            ;;
-
+          6) break ;;
         esac
 
       done
@@ -2328,241 +2167,216 @@ while true; do
     # =====================
     # 🤖 AI TOOLS
     # =====================
-    4)
+    menu_ai)
       while true; do
-      
+
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-  	  break
-	fi
-	
+          break
+        fi
+
+        # build AI submenu dinamis
+        ai_items=()
+        ai_actions=()
+
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Webcam (All)")    && ai_actions+=("cmd_ai_webcam_all")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Webcam (Person)") && ai_actions+=("cmd_ai_webcam_person")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect CCTV (RTSP)")     && ai_actions+=("cmd_ai_rtsp")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Image File")      && ai_actions+=("cmd_ai_image")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Video File")      && ai_actions+=("cmd_ai_video")
+        [ "$AI_TRAIN_FLAG"  -eq 1 ] && ai_items+=("Custom AI Train")        && ai_actions+=("cmd_ai_train")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Custom AI Run")          && ai_actions+=("cmd_ai_run")
+        [ "$AI_CHAT_FLAG"   -eq 1 ] && ai_items+=("AI Chat")                && ai_actions+=("menu_ai_chat")
+
         echo -e "${CYAN}=========================${NC}"
         echo -e "${GREEN}        AI TOOLS${NC}"
         echo -e "${CYAN}=========================${NC}"
-        echo "1. Detect Webcam (All)"
-        echo "2. Detect Webcam (Person Only)"
-        echo "3. Detect CCTV (RTSP)"
-        echo "4. Detect Image File"
-	echo "5. Detect Video File"
-        echo "6. Custom AI Train"
-        echo "7. Custom AI Run"
-        echo "8. AI Chat"
-	echo "9. Kembali"
+
+        for i in "${!ai_items[@]}"; do
+          echo "$((i+1)). ${ai_items[$i]}"
+        done
+
+        echo "$((${#ai_items[@]}+1)). Kembali"
         echo -e "${CYAN}=========================${NC}"
 
         IFS= read -r -p "Pilih menu: " aimenu || continue
 
-        case $aimenu in
+        if ! [[ "$aimenu" =~ ^[0-9]+$ ]]; then
+          echo -e "${RED}Invalid option${NC}"
+          continue
+        fi
 
-          1) cmd_ai_webcam_all ;;
-	  2) cmd_ai_webcam_person ;;
-	  3) cmd_ai_rtsp ;;
-	  4) cmd_ai_image ;;
-	  5) cmd_ai_video ;;
-	  6) cmd_ai_train ;;
-	  7) cmd_ai_run ;;
-	  8)
-  	    while true; do
-  	    
-    	      if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-      	        break
-    	      fi
+        if [ "$aimenu" -eq "$((${#ai_items[@]}+1))" ]; then
+          break
+        fi
 
-    	      echo -e "${CYAN}=========================${NC}"
-    	      echo -e "${GREEN}        AI CHAT${NC}"
-    	      echo -e "${CYAN}=========================${NC}"
+        ai_action="${ai_actions[$((aimenu-1))]}"
 
-    	      echo "1. Start Chat"
-    	      echo "2. Model Manager"
-    	      echo "3. AI History"
-    	      echo "4. AI Status"
-    	      echo "5. Clear History"
-    	      echo "6. Kembali"
+        if [ -z "$ai_action" ]; then
+          echo -e "${RED}Invalid option${NC}"
+          continue
+        fi
 
-    	      echo -e "${CYAN}=========================${NC}"
+        case "$ai_action" in
 
-    	      IFS= read -r -p "Pilih menu: " aichat || continue
+          cmd_ai_webcam_all)    cmd_ai_webcam_all ;;
+          cmd_ai_webcam_person) cmd_ai_webcam_person ;;
+          cmd_ai_rtsp)          cmd_ai_rtsp ;;
+          cmd_ai_image)         cmd_ai_image ;;
+          cmd_ai_video)         cmd_ai_video ;;
+          cmd_ai_train)         cmd_ai_train ;;
+          cmd_ai_run)           cmd_ai_run ;;
 
-    	      case $aichat in
+          menu_ai_chat)
+            while true; do
 
-      	        1)
-                  cmd_ai_chat_start
-                  ;;
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+                break
+              fi
 
-      	        2)
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}        AI CHAT${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Start Chat"
+              echo "2. Model Manager"
+              echo "3. AI History"
+              echo "4. AI Status"
+              echo "5. Clear History"
+              echo "6. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+
+              IFS= read -r -p "Pilih menu: " aichat || continue
+
+              case $aichat in
+                1) cmd_ai_chat_start ;;
+
+                2)
                   while true; do
 
                     echo "$(date +%s)" > "$WATCHDOG_FILE"
 
-          	    if [ "$RETURN_TO_MAIN" -eq 1 ]; then
-            	      break
-          	    fi
+                    if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+                      break
+                    fi
 
-          	    echo -e "${CYAN}=========================${NC}"
-          	    echo -e "${GREEN}      MODEL MANAGER${NC}"
-         	    echo -e "${CYAN}=========================${NC}"
+                    echo -e "${CYAN}=========================${NC}"
+                    echo -e "${GREEN}      MODEL MANAGER${NC}"
+                    echo -e "${CYAN}=========================${NC}"
+                    echo "1. Download Model"
+                    echo "2. List Installed Models"
+                    echo "3. Delete Model"
+                    echo "4. Kembali"
+                    echo -e "${CYAN}=========================${NC}"
 
-        	    echo "1. Download Model"
-        	    echo "2. List Installed Models"
-        	    echo "3. Delete Model"
-        	    echo "4. Kembali"
+                    IFS= read -r -p "Pilih menu: " modelmenu || continue
 
-        	    echo -e "${CYAN}=========================${NC}"
+                    case $modelmenu in
+                      1) cmd_ai_download_model ;;
+                      2) cmd_ai_list_models ;;
+                      3) cmd_ai_delete_model ;;
+                      4) break ;;
+                      *) echo -e "${RED}Invalid option${NC}" ;;
+                    esac
 
-          	    IFS= read -r -p "Pilih menu: " modelmenu || continue
-
-        	    case $modelmenu in
-
-            	      1)
-              	        cmd_ai_download_model
-             	        ;;
-
-            	      2)
-              	        cmd_ai_list_models
-              	        ;;
-
-                      3)
-                        cmd_ai_delete_model
-                        ;;
-
-                      4)
-                        break
-                        ;;
-
-            	      *)
-             	        echo -e "${RED}Invalid option${NC}"
-              	        ;;
-
-          	    esac
-
-        	  done
-                  ;;
-      	        3)
-                  cmd_ai_history
+                  done
                   ;;
 
-                4)
-                  cmd_ai_status
-                  ;;
-
-                5)
-                  cmd_ai_clear_history
-                  ;;
-
-                6)
-                  break
-                  ;;
-
-                *)
-                  echo -e "${RED}Invalid option${NC}"
-                  ;;
-
+                3) cmd_ai_history ;;
+                4) cmd_ai_status ;;
+                5) cmd_ai_clear_history ;;
+                6) break ;;
+                *) echo -e "${RED}Invalid option${NC}" ;;
               esac
 
             done
             ;;
-	  9) break ;;
-          *)
-            echo -e "${RED}Invalid option${NC}"
-            ;;
 
         esac
 
       done
       ;;
-    
+
     # =====================
-    # CUSTOM SCENARIO
+    # 📦 CUSTOM SCENARIO
     # =====================
-    5)
+    menu_scenario)
       while true; do
-      
+
         if [ "$RETURN_TO_MAIN" -eq 1 ]; then
           break
         fi
-	
+
         echo -e "${CYAN}=========================${NC}"
         echo -e "${CYAN}     CUSTOM SCENARIO${NC}"
-      	echo -e "${CYAN}=========================${NC}"
+        echo -e "${CYAN}=========================${NC}"
+        echo "1. Jalankan Scenario"
+        echo "2. Buat Scenario Baru"
+        echo "3. Kembali"
+        echo -e "${CYAN}=========================${NC}"
 
-      	echo "1. Jalankan Scenario"
-      	echo "2. Buat Scenario Baru"
-      	echo "3. Kembali"
+        IFS= read -r -p "Pilih menu: " sub || continue
 
-      	echo -e "${CYAN}=========================${NC}"
+        case $sub in
 
-      	IFS= read -r -p "Pilih menu: " sub || continue
-
-      	case $sub in
           1)
-  	    shopt -s nullglob
+            shopt -s nullglob
             files=("$SCENARIO_DIR"/*.sh)
             shopt -u nullglob
 
-  	    if [ ${#files[@]} -eq 0 ]; then
+            if [ ${#files[@]} -eq 0 ]; then
               echo "[!] Tidak ada scenario"
               continue
             fi
-          
-      	      echo -e "${CYAN}=========================${NC}"
-    	      echo -e "${CYAN}   DAFTAR SCENARIO${NC}"
-    	      echo -e "${CYAN}=========================${NC}"
 
-    	      for i in "${!files[@]}"; do
-      	        echo "$i. $(basename "${files[$i]}")"
-    	      done
+            echo -e "${CYAN}=========================${NC}"
+            echo -e "${CYAN}   DAFTAR SCENARIO${NC}"
+            echo -e "${CYAN}=========================${NC}"
 
-    	      echo -e "${CYAN}=========================${NC}"
+            for i in "${!files[@]}"; do
+              echo "$i. $(basename "${files[$i]}")"
+            done
 
-    	      read -p "Pilih scenario: " pilih
+            echo -e "${CYAN}=========================${NC}"
 
-   	      if [ -n "${files[$pilih]}" ]; then
-      	        echo "[~] Menjalankan scenario..."
+            read -p "Pilih scenario: " pilih
 
-     	        run_scenario_file "${files[$pilih]}"
-
-	        echo "[✔] Selesai"
-	        log_save "Run Scenario $(basename "${files[$pilih]}")"
-
-	      else
-	        echo "[!] Pilihan tidak valid"
-	      fi
-	  ;;
-
-          2)
-            if [ -f "$SCENARIO_BUILDER" ]; then
-                bash "$SCENARIO_BUILDER"
+            if [ -n "${files[$pilih]}" ]; then
+              echo "[~] Menjalankan scenario..."
+              run_scenario_file "${files[$pilih]}"
+              echo "[✔] Selesai"
+              log_save "Run Scenario $(basename "${files[$pilih]}")"
             else
-                echo "[!] scenario_builder.sh tidak ditemukan"
+              echo "[!] Pilihan tidak valid"
             fi
             ;;
 
-          3)
-             break
-             ;;
+          2)
+            if [ -f "$SCENARIO_BUILDER" ]; then
+              bash "$SCENARIO_BUILDER"
+            else
+              echo "[!] scenario_builder.sh tidak ditemukan"
+            fi
+            ;;
+
+          3) break ;;
+
         esac
 
       done
       ;;
-             
+
     # =====================
     # 🚪 EXIT
     # =====================
-    6)
+    do_exit)
       echo -e "${RED}Exiting KECEMBUNG...${NC}"
 
       pkill -P $$ 2>/dev/null
-     
 
       sleep 1
       clear
       break
       ;;
 
-    *)
-      echo -e "${RED}Invalid option${NC}"
-      ;;
-
-    esac
-
+  esac
 
 done
