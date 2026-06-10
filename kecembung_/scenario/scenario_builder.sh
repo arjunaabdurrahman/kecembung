@@ -515,7 +515,7 @@ OUTPUT:
       echo -e "${CYAN}=========================${NC}"
 
       shopt -s nullglob
-      files=("$SCENARIO_DIR"/*.sh)
+      mapfile -t files < <(find "$SCENARIO_DIR" -maxdepth 1 -name "*.sh" ! -name "scenario_builder.sh")
       shopt -u nullglob
 
       if [ ${#files[@]} -eq 0 ]; then

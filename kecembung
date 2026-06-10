@@ -62,21 +62,12 @@ print_info() {
 BASE_DIR="$HOME/.kecembung"
 
 # =========================
-# 🤖 AI DIRECTORY
-# =========================
-
-AI_DIR="$BASE_DIR/ai"
-
-AI_DETECT="$AI_DIR/ai_detect.py"
-AI_TRAIN="$AI_DIR/ai_train.py"
-
-# =========================
 # 🎭 SCENARIO DIRECTORY
 # =========================
 
-SCENARIO_DIR="$BASE_DIR/scenarios"
+SCENARIO_DIR="$HOME/.kecembung/scenarios"
 
-SCENARIO_BUILDER="$SCENARIO_DIR/scenario_builder.sh"
+SCENARIO_BUILDER="$HOME/.kecembung/scenarios/scenario_builder.sh"
 
 # =========================
 # 🧠 AI PYTHON ENV
@@ -137,6 +128,14 @@ if [ -f "$MODE_FILE" ]; then
   SCENARIO_FLAG="${SCENARIO:-0}"
   OLLAMA_FLAG="${OLLAMA:-0}"
 fi
+
+AI_DETECT="$AI_DIR/ai_detect.py"
+AI_TRAIN="$AI_DIR/ai_train.py"
+
+# =========================
+# 🤖 AI DIRECTORY
+# =========================
+AI_DIR="$BASE_DIR/ai"
 
 # =========================
 # ❤️ HEARTBEAT
@@ -609,7 +608,7 @@ storage_path="$HOME/kecembung_logs"
 USB_PATH=""
 USB_SELECTED=0
 
-SCENARIO_DIR="$HOME/kecembung_scenarios"
+SCENARIO_DIR="$HOME/.kecembung/scenarios"
 mkdir -p "$SCENARIO_DIR"
 
 init_storage() {
@@ -1977,7 +1976,7 @@ while true; do
   echo -e "${CYAN}=========================${NC}"
   echo ""
   if command -v figlet >/dev/null 2>&1; then
-    figlet BUNG
+    figlet CEMBUNG
     echo "Kecembung Network Toolkit"
   else
     echo -e "${GREEN}        KECEMBUNG${NC}"
