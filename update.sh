@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =========================
-# 🚀 NETTOOLS UPDATE ENGINE
+# 🚀 KECEMBUNG UPDATE ENGINE
 # =========================
 
 # =========================
@@ -21,13 +21,32 @@ set +e
 set -o pipefail
 
 # =========================
-# 📁 NETTOOLS PATH
+# 📋 SOURCE MODE FLAGS
 # =========================
-BASE_DIR="$HOME/.nettool"
+MODE_FILE="$HOME/.kecembung_mode"
+
+AI_DETECT_FLAG=0
+AI_TRAIN_FLAG=0
+AI_CHAT_FLAG=0
+SCENARIO_FLAG=0
+OLLAMA_FLAG=0
+
+if [ -f "$MODE_FILE" ]; then
+  source "$MODE_FILE"
+  AI_DETECT_FLAG="${AI_DETECT:-0}"
+  AI_TRAIN_FLAG="${AI_TRAIN:-0}"
+  AI_CHAT_FLAG="${AI_CHAT:-0}"
+  SCENARIO_FLAG="${SCENARIO:-0}"
+  OLLAMA_FLAG="${OLLAMA:-0}"
+fi
+
+# =========================
+# 📁 KECEMBUNG PATH
+# =========================
+BASE_DIR="$HOME/.kecembung"
 
 AI_DIR="$BASE_DIR/ai"
 SCENARIO_DIR="$BASE_DIR/scenarios"
-
 UPDATE_DIR="$BASE_DIR/update"
 
 mkdir -p "$UPDATE_DIR"
@@ -35,26 +54,22 @@ mkdir -p "$UPDATE_DIR"
 # =========================
 # 🌐 UPDATE CONFIG
 # =========================
-CURRENT_VERSION="2.5.0"
-
-REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/nettool/main"
+REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 
 VERSION_URL="$REPO_URL/version.txt"
 CHANGELOG_URL="$REPO_URL/changelog.txt"
 
-SCRIPT_URL="$REPO_URL/normal_nettool"
+SCRIPT_URL="$REPO_URL/kecembung"
 
-AI_DETECT_URL="$REPO_URL/nettools/ai/ai_detect.py"
-AI_TRAIN_URL="$REPO_URL/nettools/ai/ai_train.py"
+AI_DETECT_URL="$REPO_URL/kecembung_/ai/ai_detect.py"
+AI_TRAIN_URL="$REPO_URL/kecembung_/ai/ai_train.py"
 
-SCENARIO_URL="$REPO_URL/nettools/scenario/scenario_builder.sh"
-
-INSTALLER_URL="$REPO_URL/install.sh"
+SCENARIO_URL="$REPO_URL/kecembung_/scenario/scenario_builder.sh"
 
 # =========================
 # 📂 TARGET FILES
 # =========================
-MAIN_SCRIPT="$HOME/normal_nettool"
+MAIN_SCRIPT="$HOME/kecembung"
 
 AI_DETECT_FILE="$AI_DIR/ai_detect.py"
 AI_TRAIN_FILE="$AI_DIR/ai_train.py"
@@ -64,7 +79,7 @@ SCENARIO_FILE="$SCENARIO_DIR/scenario_builder.sh"
 # =========================
 # 📥 TEMP FILES
 # =========================
-TMP_MAIN="$UPDATE_DIR/normal_nettool"
+TMP_MAIN="$UPDATE_DIR/kecembung"
 
 TMP_AI_DETECT="$UPDATE_DIR/ai_detect.py"
 TMP_AI_TRAIN="$UPDATE_DIR/ai_train.py"
@@ -75,18 +90,13 @@ TMP_SCENARIO="$UPDATE_DIR/scenario_builder.sh"
 # 🛡️ CTRL+C PROTECTION
 # =========================
 trap_ctrlc() {
-
-    echo ""
-    echo -e "${RED}[!] UPDATE DIBATALKAN${NC}"
-
-    rm -rf "$UPDATE_DIR"
-
-    echo -e "${YELLOW}[~] Cleanup selesai${NC}"
-
-    sleep 2
-    clear
-
-    exit 1
+  echo ""
+  echo -e "${RED}[!] UPDATE DIBATALKAN${NC}"
+  rm -rf "$UPDATE_DIR"
+  echo -e "${YELLOW}[~] Cleanup selesai${NC}"
+  sleep 2
+  clear
+  exit 1
 }
 
 trap trap_ctrlc SIGINT
@@ -95,267 +105,254 @@ trap trap_ctrlc SIGINT
 # 🧠 UI HELPER
 # =========================
 print_line() {
-    echo -e "${CYAN}========================================${NC}"
+  echo -e "${CYAN}========================================${NC}"
 }
 
 print_title() {
-    clear
-    print_line
-    echo -e "${GREEN}        NETTOOLS UPDATE${NC}"
-    print_line
+  clear
+  print_line
+  echo -e "${GREEN}        KECEMBUNG UPDATE ENGINE${NC}"
+  print_line
 }
 
 # =========================
 # 📊 PROGRESS BAR
 # =========================
 progress_bar() {
+  local percent=$1
+  local text="$2"
 
-    local percent=$1
-    local text="$2"
+  local done=$((percent / 2))
+  local left=$((50 - done))
 
-    local done=$((percent / 2))
-    local left=$((50 - done))
+  printf "\r${CYAN}["
+  printf "%0.s#" $(seq 1 $done)
+  printf "%0.s-" $(seq 1 $left)
+  printf "]${NC} %s%% | %s" "$percent" "$text"
 
-    printf "\r${CYAN}["
-    printf "%0.s#" $(seq 1 $done)
-    printf "%0.s-" $(seq 1 $left)
-    printf "]${NC} %s%% | %s" "$percent" "$text"
-
-    if [ "$percent" -ge 100 ]; then
-        echo ""
-    fi
+  if [ "$percent" -ge 100 ]; then
+    echo ""
+  fi
 }
 
 # =========================
 # 🌐 INTERNET CHECK
 # =========================
 check_internet() {
+  progress_bar 5 "Checking internet"
 
-    progress_bar 5 "Checking internet"
+  ping -c 1 8.8.8.8 >/dev/null 2>&1
 
-    ping -c 1 8.8.8.8 >/dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo -e "${RED}[!] Tidak ada koneksi internet${NC}"
+    exit 1
+  fi
 
-    if [ $? -ne 0 ]; then
-
-        echo ""
-        echo -e "${RED}[!] Tidak ada koneksi internet${NC}"
-        exit 1
-    fi
-
-    progress_bar 10 "Internet OK"
-    sleep 1
+  progress_bar 10 "Internet OK"
+  sleep 1
 }
 
 # =========================
 # 🔍 VALIDATE UPDATE SERVER
 # =========================
 validate_server() {
+  progress_bar 15 "Connecting update server"
 
-    progress_bar 15 "Connecting update server"
-
-    HTTP_STATUS=$(curl -o /dev/null -s \
+  HTTP_STATUS=$(curl -o /dev/null -s \
     -w "%{http_code}" \
     --max-time 10 \
     "$VERSION_URL")
 
-    if [ "$HTTP_STATUS" != "200" ]; then
+  if [ "$HTTP_STATUS" != "200" ]; then
+    echo ""
+    echo -e "${RED}[!] Update server tidak valid (HTTP $HTTP_STATUS)${NC}"
+    exit 1
+  fi
 
-        echo ""
-        echo -e "${RED}[!] Update server invalid (HTTP $HTTP_STATUS)${NC}"
-        exit 1
-    fi
-
-    progress_bar 20 "Server validated"
-    sleep 1
+  progress_bar 20 "Server validated"
+  sleep 1
 }
 
 # =========================
-# 🧠 GET MODEL NAME
-# =========================
-get_model_name() {
-
-    if command -v ollama >/dev/null 2>&1; then
-
-        MODEL_NAME=$(ollama list 2>/dev/null | \
-        awk 'NR==2 {print $1}')
-
-        [ -z "$MODEL_NAME" ] && MODEL_NAME="default"
-
-    else
-        MODEL_NAME="default"
-    fi
-}
-
-# =========================
-# ⚠️ USER VALIDATION
+# ⚠️ USER CONFIRMATION
 # =========================
 confirm_update() {
+  echo ""
+  print_line
 
+  CURRENT_VERSION=$(grep 'CURRENT_VERSION=' "$MAIN_SCRIPT" 2>/dev/null | head -1 | cut -d'"' -f2)
+  [ -z "$CURRENT_VERSION" ] && CURRENT_VERSION="unknown"
+
+  LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL" | tr -d ' \n\r')
+
+  echo -e "${YELLOW}Version sekarang : ${NC}$CURRENT_VERSION"
+  echo -e "${GREEN}Version terbaru  : ${NC}$LATEST_VERSION"
+
+  print_line
+
+  echo ""
+  echo -e "${BLUE}Perubahan terbaru:${NC}"
+  echo ""
+  curl -s --max-time 5 "$CHANGELOG_URL"
+  echo ""
+
+  print_line
+
+  echo ""
+  echo -e "${CYAN}Komponen yang akan diupdate:${NC}"
+  echo "  [✔] kecembung (main script)"
+  echo "  [✔] scenario_builder.sh"
+
+  if [ "$AI_DETECT_FLAG" -eq 1 ]; then
+    echo "  [✔] ai_detect.py"
+  else
+    echo "  [-] ai_detect.py (dilewati, AI_DETECT=0)"
+  fi
+
+  if [ "$AI_TRAIN_FLAG" -eq 1 ]; then
+    echo "  [✔] ai_train.py"
+  else
+    echo "  [-] ai_train.py (dilewati, AI_TRAIN=0)"
+  fi
+
+  echo ""
+  print_line
+
+  IFS= read -r -p "Lanjut update? (YES): " confirm
+
+  if [ "$confirm" != "YES" ]; then
     echo ""
-    print_line
-
-    echo -e "${YELLOW}Version sekarang : ${NC}$CURRENT_VERSION"
-
-    LATEST_VERSION=$(curl -s "$VERSION_URL" | tr -d '\n\r')
-
-    echo -e "${GREEN}Version terbaru  : ${NC}$LATEST_VERSION"
-
-    print_line
-
-    echo ""
-    echo -e "${BLUE}Perubahan terbaru:${NC}"
-    echo ""
-
-    curl -s "$CHANGELOG_URL"
-
-    echo ""
-    print_line
-
-    read -p "Lanjut update? (YES): " confirm
-
-    if [ "$confirm" != "YES" ]; then
-
-        echo ""
-        echo -e "${RED}[!] Update dibatalkan${NC}"
-
-        sleep 2
-        clear
-
-        exit 1
-    fi
+    echo -e "${RED}[!] Update dibatalkan${NC}"
+    sleep 2
+    clear
+    exit 1
+  fi
 }
 
 # =========================
 # 📥 DOWNLOAD FILES
 # =========================
 download_files() {
+  progress_bar 25 "Preparing update"
 
-    progress_bar 25 "Preparing update"
+  rm -rf "$UPDATE_DIR"
+  mkdir -p "$UPDATE_DIR"
 
-    rm -rf "$UPDATE_DIR"
-    mkdir -p "$UPDATE_DIR"
+  sleep 1
 
-    sleep 1
+  # Main script — selalu download
+  progress_bar 35 "Downloading kecembung"
+  curl -fsSL "$SCRIPT_URL" -o "$TMP_MAIN"
 
-    progress_bar 35 "Downloading normal_nettool"
+  if [ ! -s "$TMP_MAIN" ]; then
+    echo ""
+    echo -e "${RED}[!] Gagal download kecembung${NC}"
+    exit 1
+  fi
 
-    curl -fsSL "$SCRIPT_URL" \
-    -o "$TMP_MAIN"
-
+  # AI detect — hanya kalau flag aktif
+  if [ "$AI_DETECT_FLAG" -eq 1 ]; then
     progress_bar 50 "Downloading ai_detect.py"
-
-    curl -fsSL "$AI_DETECT_URL" \
-    -o "$TMP_AI_DETECT"
-
-    progress_bar 65 "Downloading ai_train.py"
-
-    curl -fsSL "$AI_TRAIN_URL" \
-    -o "$TMP_AI_TRAIN"
-
-    progress_bar 75 "Downloading scenario_builder"
-
-    curl -fsSL "$SCENARIO_URL" \
-    -o "$TMP_SCENARIO"
-
-    sleep 1
-}
-
-# =========================
-# 🔍 VALIDATE FILES
-# =========================
-validate_files() {
-
-    progress_bar 80 "Validating files"
-
-    if [ ! -s "$TMP_MAIN" ]; then
-        echo ""
-        echo -e "${RED}[!] normal_nettool corrupt${NC}"
-        exit 1
-    fi
+    curl -fsSL "$AI_DETECT_URL" -o "$TMP_AI_DETECT"
 
     if [ ! -s "$TMP_AI_DETECT" ]; then
-        echo ""
-        echo -e "${RED}[!] ai_detect.py corrupt${NC}"
-        exit 1
+      echo ""
+      echo -e "${RED}[!] Gagal download ai_detect.py${NC}"
+      exit 1
     fi
+  else
+    progress_bar 50 "Skipping ai_detect.py (flag off)"
+    sleep 0.5
+  fi
+
+  # AI train — hanya kalau flag aktif
+  if [ "$AI_TRAIN_FLAG" -eq 1 ]; then
+    progress_bar 65 "Downloading ai_train.py"
+    curl -fsSL "$AI_TRAIN_URL" -o "$TMP_AI_TRAIN"
 
     if [ ! -s "$TMP_AI_TRAIN" ]; then
-        echo ""
-        echo -e "${RED}[!] ai_train.py corrupt${NC}"
-        exit 1
+      echo ""
+      echo -e "${RED}[!] Gagal download ai_train.py${NC}"
+      exit 1
     fi
+  else
+    progress_bar 65 "Skipping ai_train.py (flag off)"
+    sleep 0.5
+  fi
 
-    if [ ! -s "$TMP_SCENARIO" ]; then
-        echo ""
-        echo -e "${RED}[!] scenario_builder corrupt${NC}"
-        exit 1
-    fi
+  # Scenario builder — selalu download
+  progress_bar 75 "Downloading scenario_builder.sh"
+  curl -fsSL "$SCENARIO_URL" -o "$TMP_SCENARIO"
 
-    sleep 1
+  if [ ! -s "$TMP_SCENARIO" ]; then
+    echo ""
+    echo -e "${RED}[!] Gagal download scenario_builder.sh${NC}"
+    exit 1
+  fi
+
+  sleep 1
 }
 
 # =========================
 # 🧹 CLEAN OLD FILES
 # =========================
 cleanup_old() {
+  progress_bar 85 "Cleaning old files"
 
-    progress_bar 85 "Cleaning old files"
+  rm -f "$MAIN_SCRIPT"
+  rm -f "$SCENARIO_FILE"
 
-    rm -f "$MAIN_SCRIPT"
+  [ "$AI_DETECT_FLAG" -eq 1 ] && rm -f "$AI_DETECT_FILE"
+  [ "$AI_TRAIN_FLAG"  -eq 1 ] && rm -f "$AI_TRAIN_FILE"
 
-    rm -f "$AI_DETECT_FILE"
-    rm -f "$AI_TRAIN_FILE"
-
-    rm -f "$SCENARIO_FILE"
-
-    sleep 1
+  sleep 1
 }
 
 # =========================
 # 📦 INSTALL UPDATE
 # =========================
 install_update() {
+  progress_bar 90 "Installing update"
 
-    progress_bar 90 "Updating [$MODEL_NAME] NETTOOLS"
+  mkdir -p "$AI_DIR"
+  mkdir -p "$SCENARIO_DIR"
 
-    mkdir -p "$AI_DIR"
-    mkdir -p "$SCENARIO_DIR"
+  mv "$TMP_MAIN" "$MAIN_SCRIPT"
+  chmod +x "$MAIN_SCRIPT"
 
-    mv "$TMP_MAIN" \
-    "$MAIN_SCRIPT"
+  mv "$TMP_SCENARIO" "$SCENARIO_FILE"
+  chmod +x "$SCENARIO_FILE"
 
-    mv "$TMP_AI_DETECT" \
-    "$AI_DETECT_FILE"
+  if [ "$AI_DETECT_FLAG" -eq 1 ] && [ -f "$TMP_AI_DETECT" ]; then
+    mv "$TMP_AI_DETECT" "$AI_DETECT_FILE"
+  fi
 
-    mv "$TMP_AI_TRAIN" \
-    "$AI_TRAIN_FILE"
+  if [ "$AI_TRAIN_FLAG" -eq 1 ] && [ -f "$TMP_AI_TRAIN" ]; then
+    mv "$TMP_AI_TRAIN" "$AI_TRAIN_FILE"
+  fi
 
-    mv "$TMP_SCENARIO" \
-    "$SCENARIO_FILE"
-
-    chmod +x "$MAIN_SCRIPT"
-    chmod +x "$SCENARIO_FILE"
-
-    sleep 1
+  sleep 1
 }
 
 # =========================
 # ✅ FINALIZE
 # =========================
 finish_update() {
+  progress_bar 100 "KECEMBUNG updated successfully"
 
-    progress_bar 100 "NETTOOLS updated successfully"
+  rm -rf "$UPDATE_DIR"
 
-    rm -rf "$UPDATE_DIR"
+  echo ""
+  print_line
+  echo -e "${GREEN}[✔] KECEMBUNG BERHASIL DIUPDATE${NC}"
+  print_line
+  echo ""
 
-    echo ""
-    echo -e "${GREEN}[✔] NETTOOLS BERHASIL DIUPDATE${NC}"
+  sleep 2
+  clear
 
-    sleep 3
-
-    clear
-
-    exec "$MAIN_SCRIPT"
+  exec 0
 }
 
 # =========================
@@ -363,20 +360,10 @@ finish_update() {
 # =========================
 print_title
 
-get_model_name
-
 check_internet
-
 validate_server
-
 confirm_update
-
 download_files
-
-validate_files
-
 cleanup_old
-
 install_update
-
 finish_update
