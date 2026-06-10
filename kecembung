@@ -58,50 +58,46 @@ print_info() {
 # =========================
 # 📁 KECEMBUNG BASE DIRECTORY
 # =========================
-
 BASE_DIR="$HOME/.kecembung"
+
+# =========================
+# 🤖 AI DIRECTORY
+# =========================
+AI_DIR="$BASE_DIR/ai"
 
 # =========================
 # 🎭 SCENARIO DIRECTORY
 # =========================
-
 SCENARIO_DIR="$HOME/.kecembung/scenarios"
-
 SCENARIO_BUILDER="$HOME/.kecembung/scenarios/scenario_builder.sh"
 
 # =========================
 # 🧠 AI PYTHON ENV
 # =========================
-
 AI_ENV="$HOME/kecembung-env"
 AI_PYTHON="$AI_ENV/bin/python"
 
 # =========================
 # 📝 LOG DIRECTORY
 # =========================
-
 LOG_DIR="$BASE_DIR/logs"
 
 # =========================
 # 🧠 AI CHAT DIRECTORY
 # =========================
-
 AI_HISTORY_DIR="$BASE_DIR/ai/history"
 
 # =========================
 # 💾 STORAGE SYSTEM
 # =========================
-
 storage_mode="local"
 storage_path="$LOG_DIR"
-
 USB_PATH=""
 USB_SELECTED=0
 
 # =========================
 # 📂 AUTO CREATE DIRECTORY
 # =========================
-
 mkdir -p "$BASE_DIR"
 mkdir -p "$AI_DIR"
 mkdir -p "$SCENARIO_DIR"
@@ -111,15 +107,12 @@ mkdir -p "$AI_HISTORY_DIR"
 # =========================
 # 📋 SOURCE MODE FLAG
 # =========================
-
 MODE_FILE="$HOME/.kecembung_mode"
-
 AI_DETECT_FLAG=0
 AI_TRAIN_FLAG=0
 AI_CHAT_FLAG=0
 SCENARIO_FLAG=0
 OLLAMA_FLAG=0
-
 if [ -f "$MODE_FILE" ]; then
   source "$MODE_FILE"
   AI_DETECT_FLAG="${AI_DETECT:-0}"
@@ -128,14 +121,8 @@ if [ -f "$MODE_FILE" ]; then
   SCENARIO_FLAG="${SCENARIO:-0}"
   OLLAMA_FLAG="${OLLAMA:-0}"
 fi
-
 AI_DETECT="$AI_DIR/ai_detect.py"
 AI_TRAIN="$AI_DIR/ai_train.py"
-
-# =========================
-# 🤖 AI DIRECTORY
-# =========================
-AI_DIR="$BASE_DIR/ai"
 
 # =========================
 # ❤️ HEARTBEAT
@@ -324,7 +311,7 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="3.0.0"
+CURRENT_VERSION="1.0.0"
 
 REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 
