@@ -1,4 +1,4 @@
-v2.0.0 - KECEMBUNG Hack Update
+v2.0.1 - KECEMBUNG Hack Update
 
 =====================================
 📅 Released: Friday, 12 June 2026
@@ -25,3 +25,4 @@ v2.0.0 - KECEMBUNG Hack Update
 - Peningkatan kompatibilitas sistem dan stabilitas eksekusi
 - Penyempurnaan handling background process dan interrupt signal
 - Optimalisasi validasi input dan struktur direktori
+- Perbaikan Bug minor di updater

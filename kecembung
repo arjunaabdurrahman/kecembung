@@ -313,7 +313,7 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="2.0.0"
+CURRENT_VERSION="2.0.1"
 
 REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 

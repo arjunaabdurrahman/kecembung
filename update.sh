@@ -529,6 +529,7 @@ finish_update() {
   [ "$AI_TRAIN_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Train"
   [ "$AI_CHAT_FLAG"   -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Chat"
   [ "$SCENARIO_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Scenario Builder"
+  [ "$OFFENSIVE_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Offensive Tools"
   echo ""
 
   sleep 2
