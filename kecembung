@@ -313,7 +313,7 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="2.0.1"
+CURRENT_VERSION="2.0.2"
 
 REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 
@@ -496,14 +496,11 @@ check_update() {
 }
 
 do_update() {
-
   UPDATE_SCRIPT="$HOME/.kecembung/update.sh"
-
   mkdir -p "$HOME/.kecembung"
 
   echo ""
   echo "[~] Preparing update engine..."
-
   curl -fsSL "$UPDATE_URL" -o "$UPDATE_SCRIPT"
 
   if [ ! -s "$UPDATE_SCRIPT" ]; then
@@ -512,14 +509,11 @@ do_update() {
   fi
 
   chmod +x "$UPDATE_SCRIPT"
-
   clear
-
   echo "[~] Launching KECEMBUNG updater..."
   sleep 1
 
   bash "$UPDATE_SCRIPT"
-
   local status=$?
 
   if [ $status -ne 0 ]; then
@@ -527,11 +521,95 @@ do_update() {
     return 1
   fi
 
+  # =========================
+  # 🔍 CEK COMPONENT BARU
+  # =========================
+  MODE_FILE="$HOME/.kecembung_mode"
+  [ ! -f "$MODE_FILE" ] && touch "$MODE_FILE"
+  source "$MODE_FILE"
+
+  AI_DETECT=${AI_DETECT:-0}
+  AI_TRAIN=${AI_TRAIN:-0}
+  AI_CHAT=${AI_CHAT:-0}
+  SCENARIO=${SCENARIO:-0}
+  OFFENSIVE=${OFFENSIVE:-0}
+
+  # List component yang belum aktif
+  NEW_ITEMS=()
+  NEW_LABELS=()
+  NEW_KEYS=()
+
+  [ "$AI_DETECT" -eq 0 ] && NEW_ITEMS+=("AI Detect") && NEW_LABELS+=("Object detection via webcam, RTSP, image, video") && NEW_KEYS+=("1")
+  [ "$AI_TRAIN"  -eq 0 ] && NEW_ITEMS+=("AI Train")  && NEW_LABELS+=("Train custom YOLO models") && NEW_KEYS+=("2")
+  [ "$AI_CHAT"   -eq 0 ] && NEW_ITEMS+=("AI Chat")   && NEW_LABELS+=("Local LLM chat assistant via Ollama") && NEW_KEYS+=("3")
+  [ "$SCENARIO"  -eq 0 ] && NEW_ITEMS+=("Scenario Builder") && NEW_LABELS+=("Build & run automated scenarios") && NEW_KEYS+=("4")
+  [ "$OFFENSIVE" -eq 0 ] && NEW_ITEMS+=("Offensive Tools")  && NEW_LABELS+=("Nmap vuln, Masscan, R-Shell, Deauth, Autopwn") && NEW_KEYS+=("5")
+
+  if [ ${#NEW_ITEMS[@]} -gt 0 ]; then
+    echo ""
+    echo -e "${CYAN}==================================================${NC}"
+    echo -e "${GREEN}      NEW COMPONENTS AVAILABLE${NC}"
+    echo -e "${CYAN}==================================================${NC}"
+    echo ""
+
+    for i in "${!NEW_ITEMS[@]}"; do
+      if [ "${NEW_ITEMS[$i]}" = "Offensive Tools" ]; then
+        echo -e "${RED}[${NEW_KEYS[$i]}] ${NEW_ITEMS[$i]}${NC}"
+      else
+        echo -e "${GREEN}[${NEW_KEYS[$i]}] ${NEW_ITEMS[$i]}${NC}"
+      fi
+      echo "    ${NEW_LABELS[$i]}"
+      echo ""
+    done
+
+    echo -e "${CYAN}==================================================${NC}"
+    echo -e "${YELLOW}Select components to install (example: 1 3 5)${NC}"
+    echo -e "${YELLOW}Type 'all' to install everything${NC}"
+    echo -e "${YELLOW}Or press ENTER to skip${NC}"
+    echo -e "${CYAN}==================================================${NC}"
+
+    IFS= read -r -p "Select: " selection </dev/tty
+
+    INSTALL_AI_DETECT=0
+    INSTALL_AI_TRAIN=0
+    INSTALL_AI_CHAT=0
+    INSTALL_SCENARIO=0
+    INSTALL_OFFENSIVE=0
+
+    if [ -n "$selection" ]; then
+      if [ "$selection" = "all" ]; then
+        [ "$AI_DETECT" -eq 0 ]  && INSTALL_AI_DETECT=1
+        [ "$AI_TRAIN" -eq 0 ]   && INSTALL_AI_TRAIN=1
+        [ "$AI_CHAT" -eq 0 ]    && INSTALL_AI_CHAT=1
+        [ "$SCENARIO" -eq 0 ]   && INSTALL_SCENARIO=1
+        [ "$OFFENSIVE" -eq 0 ] && INSTALL_OFFENSIVE=1
+      else
+        for num in $selection; do
+          case $num in
+            1) [ "$AI_DETECT" -eq 0 ]  && INSTALL_AI_DETECT=1 ;;
+            2) [ "$AI_TRAIN" -eq 0 ]   && INSTALL_AI_TRAIN=1 ;;
+            3) [ "$AI_CHAT" -eq 0 ]    && INSTALL_AI_CHAT=1 ;;
+            4) [ "$SCENARIO" -eq 0 ]   && INSTALL_SCENARIO=1 ;;
+            5) [ "$OFFENSIVE" -eq 0 ]  && INSTALL_OFFENSIVE=1 ;;
+          esac
+        done
+      fi
+
+      # Jalankan install component yang dipilih
+      if [ "$INSTALL_AI_DETECT" -eq 1 ] || [ "$INSTALL_AI_TRAIN" -eq 1 ] || [ "$INSTALL_AI_CHAT" -eq 1 ] || [ "$INSTALL_SCENARIO" -eq 1 ] || [ "$INSTALL_OFFENSIVE" -eq 1 ]; then
+        echo ""
+        echo -e "${GREEN}[~] Installing selected components...${NC}"
+        
+        # Panggil ulang installer tapi mode silent component only
+        KECEMBUNG_UPDATE_MODE=1 bash "$HOME/.kecembung/install.sh"
+      fi
+    fi
+  fi
+
   echo ""
   echo "[✔] Update selesai"
   echo "[~] Restarting KECEMBUNG..."
   sleep 2
-
   exec "$0"
 }
 

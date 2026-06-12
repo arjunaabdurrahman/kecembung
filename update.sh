@@ -21,6 +21,25 @@ set +e
 set -o pipefail
 
 # =========================
+# 🔄 UPDATE MODE CHECK
+# =========================
+UPDATE_MODE="${KECEMBUNG_UPDATE_MODE:-0}"
+
+if [ "$UPDATE_MODE" -eq 1 ]; then
+  # Skip welcome, skip sudo auth, skip password
+  # Langsung lompat ke install component berdasarkan ENV
+  INSTALL_AI_DETECT=${INSTALL_AI_DETECT:-0}
+  INSTALL_AI_TRAIN=${INSTALL_AI_TRAIN:-0}
+  INSTALL_AI_CHAT=${INSTALL_AI_CHAT:-0}
+  INSTALL_SCENARIO=${INSTALL_SCENARIO:-0}
+  INSTALL_OFFENSIVE=${INSTALL_OFFENSIVE:-0}
+else
+  # Normal install flow kayak biasa
+  clear
+  echo -e "${CYAN}"...
+fi
+
+# =========================
 # 📋 SOURCE MODE FLAGS
 # =========================
 MODE_FILE="$HOME/.kecembung_mode"
