@@ -313,7 +313,7 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="2.0.2"
+CURRENT_VERSION="2.0.3"
 
 REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 
@@ -492,6 +492,7 @@ check_update() {
 
   else
     echo "[✔] Sudah versi terbaru"
+    clear
   fi
 }
 
