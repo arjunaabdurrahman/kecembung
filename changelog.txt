@@ -1,17 +1,27 @@
-v1.0.0 - Kecembung Demo
+v2.0.0 - KECEMBUNG Hack Update
 
-==================================
-📅 Released: Tuesday, 9 June 2026
-==================================
+=====================================
+📅 Released: Friday, 12 June 2026
+=====================================
 
 ✨ Perubahan
 
-- NetTool diubah menjadi KECEMBUNG tool
+- Implementasi Offensive Tools module: Nmap Vulnerability Scanner, Masscan, Reverse Shell Generator, WiFi Deauthentication, Exploit Autopwn
+- Implementasi Defensive Suite: ARP Watch, IP Blocklist, Connection Monitor, DHCP Snooping, MAC Whitelist
+- Implementasi TCP Defensive: Port Knocking, Fail2Ban Monitor, SYN Flood Detector
+- Implementasi Storage Security: Log Integrity Check, File Monitor
+- Scenario Builder diperluas dengan 15 tactical command baru dan filter berbasis kategori
 
 📊 Peningkatan
 
-- Peningkatan dalam teknis dan lebih fleksibel terhadap user
+- Arsitektur modular dengan unified logging system di `$LOG_DIR/kecembung_log.txt`
+- Peningkatan stabilitas core engine dan eksekusi command
+- Antarmuka pengguna dinamis dengan pemisahan kategori: Network, Defensive, Offensive
+- Installer mendukung seleksi komponen: AI Tools, Scenario Builder, Offensive Tools
+- Optimalisasi performa dan efisiensi resource pada semua modul
 
 🛠 Perbaikan
 
-- Minor Bug telah diperbaiki
+- Peningkatan kompatibilitas sistem dan stabilitas eksekusi
+- Penyempurnaan handling background process dan interrupt signal
+- Optimalisasi validasi input dan struktur direktori

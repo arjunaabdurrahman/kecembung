@@ -20,6 +20,7 @@ AI_TRAIN_FLAG=0
 AI_CHAT_FLAG=0
 SCENARIO_FLAG=0
 OLLAMA_FLAG=0
+OFFENSIVE_FLAG=0
 
 if [ -f "$MODE_FILE" ]; then
   source "$MODE_FILE"
@@ -28,6 +29,7 @@ if [ -f "$MODE_FILE" ]; then
   AI_CHAT_FLAG="${AI_CHAT:-0}"
   SCENARIO_FLAG="${SCENARIO:-0}"
   OLLAMA_FLAG="${OLLAMA:-0}"
+  OFFENSIVE_FLAG="${OFFENSIVE:-0}"
 fi
 
 # =========================
@@ -41,124 +43,70 @@ mkdir -p "$SCENARIO_DIR"
 # =========================
 
 all_categories=(
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-"IP TOOLS"
-
-"TCP TOOLS"
-"TCP TOOLS"
-"TCP TOOLS"
-"TCP TOOLS"
-"TCP TOOLS"
-"TCP TOOLS"
-
-"AI TOOLS"
-"AI TOOLS"
-"AI TOOLS"
-"AI TOOLS"
-"AI TOOLS"
-"AI TOOLS"
-"AI TOOLS"
-
-"STORAGE"
-"STORAGE"
-"STORAGE"
-"STORAGE"
-
-"USB TOOLS"
-"USB TOOLS"
-"USB TOOLS"
-"USB TOOLS"
-"USB TOOLS"
+# IP TOOLS
+"IP TOOLS" "IP TOOLS" "IP TOOLS" "IP TOOLS" "IP TOOLS" "IP TOOLS" "IP TOOLS" "IP TOOLS" "IP TOOLS" "IP TOOLS"
+# IP DEFENSIVE
+"IP DEFENSIVE" "IP DEFENSIVE" "IP DEFENSIVE" "IP DEFENSIVE" "IP DEFENSIVE"
+# TCP TOOLS
+"TCP TOOLS" "TCP TOOLS" "TCP TOOLS" "TCP TOOLS" "TCP TOOLS" "TCP TOOLS"
+# TCP DEFENSIVE
+"TCP DEFENSIVE" "TCP DEFENSIVE" "TCP DEFENSIVE"
+# AI TOOLS
+"AI TOOLS" "AI TOOLS" "AI TOOLS" "AI TOOLS" "AI TOOLS" "AI TOOLS" "AI TOOLS"
+# STORAGE
+"STORAGE" "STORAGE"
+# STORAGE DEFENSIVE
+"STORAGE DEFENSIVE" "STORAGE DEFENSIVE"
+# USB TOOLS
+"USB TOOLS" "USB TOOLS" "USB TOOLS" "USB TOOLS" "USB TOOLS"
+# OFFENSIVE TOOLS
+"OFFENSIVE" "OFFENSIVE" "OFFENSIVE" "OFFENSIVE" "OFFENSIVE"
 )
 
 all_labels=(
-"Lihat IP"
-"Scan Jaringan"
-"Ping IP"
-"Set IP Manual"
-"Routing Info"
-"DNS Check"
-"Internet Check"
-"Scan SSH"
-"SSH Connect"
-"Reset IP"
-
-"TCP Scan Port"
-"TCP Service Detection"
-"TCP Range Scan"
-"TCP Specific Port"
-"TCP Local Ports"
-"TCP Banner Grab"
-
-"AI Webcam All"
-"AI Webcam Person"
-"AI RTSP"
-"AI Image Detection"
-"AI Video Detection"
-"AI Train Model"
-"AI Run Model"
-
-"Storage Local Mode"
-"Storage USB Mode"
-"Install Package"
-"Save Log"
-
-"USB Detect"
-"USB Select"
-"USB Workspace"
-"USB Read"
-"USB Delete"
+# IP TOOLS
+"Lihat IP" "Scan Jaringan" "Ping IP" "Set IP Manual" "Routing Info" "DNS Check" "Internet Check" "Scan SSH" "SSH Connect" "Reset IP"
+# IP DEFENSIVE  
+"ARP Watch" "IP Blocklist" "Connection Monitor" "DHCP Snooping" "MAC Whitelist"
+# TCP TOOLS
+"TCP Scan Port" "TCP Service Detection" "TCP Range Scan" "TCP Specific Port" "TCP Local Ports" "TCP Banner Grab"
+# TCP DEFENSIVE
+"Port Knocking Setup" "Fail2Ban Monitor" "SYN Flood Detector"
+# AI TOOLS
+"AI Webcam All" "AI Webcam Person" "AI RTSP" "AI Image Detection" "AI Video Detection" "AI Train Model" "AI Run Model"
+# STORAGE
+"Storage Local Mode" "Storage USB Mode" "Install Package" "Save Log"
+# STORAGE DEFENSIVE
+"Log Integrity Check" "File Monitor"
+# USB TOOLS
+"USB Detect" "USB Select" "USB Workspace" "USB Read" "USB Delete"
+# OFFENSIVE TOOLS
+"Nmap Vuln Scan" "Masscan Aggressive" "Reverse Shell Gen" "Wifi Deauth Attack" "Exploit Autopwn"
 )
 
 all_commands=(
-cmd_lihat_ip
-cmd_scan_jaringan
-cmd_ping_ip
-cmd_set_ip_manual
-cmd_routing
-cmd_dns_check
-cmd_internet_check
-cmd_scan_ssh
-cmd_ssh_connect
-cmd_reset_ip
-
-cmd_tcp_scan_port
-cmd_tcp_service_detection
-cmd_tcp_range_scan
-cmd_tcp_specific_port
-cmd_tcp_local_ports
-cmd_tcp_banner_grab
-
-cmd_ai_webcam_all
-cmd_ai_webcam_person
-cmd_ai_rtsp
-cmd_ai_image
-cmd_ai_video
-cmd_ai_train
-cmd_ai_run
-
-cmd_storage_local
-cmd_storage_usb
-cmd_storage_install
-cmd_storage_save_log
-
-cmd_usb_detect
-cmd_usb_select
-cmd_usb_workspace
-cmd_usb_read
-cmd_usb_delete
+# IP TOOLS
+cmd_lihat_ip cmd_scan_jaringan cmd_ping_ip cmd_set_ip_manual cmd_routing cmd_dns_check cmd_internet_check cmd_scan_ssh cmd_ssh_connect cmd_reset_ip
+# IP DEFENSIVE
+cmd_arp_watch cmd_ip_blocklist cmd_conn_monitor cmd_dhcp_snooping cmd_mac_whitelist
+# TCP TOOLS
+cmd_tcp_scan_port cmd_tcp_service_detection cmd_tcp_range_scan cmd_tcp_specific_port cmd_tcp_local_ports cmd_tcp_banner_grab
+# TCP DEFENSIVE
+cmd_port_knock_setup cmd_fail2ban_status cmd_syn_flood_detect
+# AI TOOLS
+cmd_ai_webcam_all cmd_ai_webcam_person cmd_ai_rtsp cmd_ai_image cmd_ai_video cmd_ai_train cmd_ai_run
+# STORAGE
+cmd_storage_local cmd_storage_usb cmd_storage_install cmd_storage_save_log
+# STORAGE DEFENSIVE
+cmd_log_integrity_check cmd_file_monitor
+# USB TOOLS
+cmd_usb_detect cmd_usb_select cmd_usb_workspace cmd_usb_read cmd_usb_delete
+# OFFENSIVE TOOLS
+cmd_nmap_vuln_scan cmd_masscan_aggressive cmd_reverse_shell_gen cmd_wifi_deauth_attack cmd_exploit_autopwn
 )
 
 # =========================
-# 🔧 BUILD ACTIVE LIST (filter AI kalau flag off)
+# 🔧 BUILD ACTIVE LIST (filter AI + OFFENSIVE kalau flag off)
 # =========================
 
 categories=()
@@ -171,14 +119,17 @@ for i in "${!all_commands[@]}"; do
 
   # Filter AI commands berdasarkan flag
   if [ "$cat" = "AI TOOLS" ]; then
-    # cmd_ai_train → butuh AI_TRAIN_FLAG
     if [ "$cmd" = "cmd_ai_train" ] && [ "$AI_TRAIN_FLAG" -ne 1 ]; then
       continue
     fi
-    # cmd_ai_* lainnya → butuh AI_DETECT_FLAG
     if [ "$cmd" != "cmd_ai_train" ] && [ "$AI_DETECT_FLAG" -ne 1 ]; then
       continue
     fi
+  fi
+
+  # Filter OFFENSIVE commands berdasarkan flag
+  if [ "$cat" = "OFFENSIVE" ] && [ "$OFFENSIVE_FLAG" -ne 1 ]; then
+    continue
   fi
 
   categories+=("$cat")

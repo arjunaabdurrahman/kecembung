@@ -30,6 +30,7 @@ AI_TRAIN_FLAG=0
 AI_CHAT_FLAG=0
 SCENARIO_FLAG=0
 OLLAMA_FLAG=0
+OFFENSIVE_FLAG=0
 
 if [ -f "$MODE_FILE" ]; then
   source "$MODE_FILE"
@@ -38,6 +39,7 @@ if [ -f "$MODE_FILE" ]; then
   AI_CHAT_FLAG="${AI_CHAT:-0}"
   SCENARIO_FLAG="${SCENARIO:-0}"
   OLLAMA_FLAG="${OLLAMA:-0}"
+  OFFENSIVE_FLAG="${OFFENSIVE:-0}"
 fi
 
 # =========================
@@ -69,7 +71,7 @@ SCENARIO_URL="$REPO_URL/kecembung_/scenario/scenario_builder.sh"
 # =========================
 # 📂 TARGET FILES
 # =========================
-MAIN_SCRIPT="$HOME/kecembung"
+MAIN_SCRIPT="/usr/local/bin/kecembung"
 
 AI_DETECT_FILE="$AI_DIR/ai_detect.py"
 AI_TRAIN_FILE="$AI_DIR/ai_train.py"
@@ -175,6 +177,88 @@ validate_server() {
 }
 
 # =========================
+# 💡 CEK KOMPONEN BELUM INSTALL
+# =========================
+check_missing_components() {
+  echo ""
+  print_line
+  echo -e "${CYAN}  CEK KOMPONEN BELUM TERINSTALL${NC}"
+  print_line
+  echo ""
+
+  INSTALL_AI_DETECT=0
+  INSTALL_AI_TRAIN=0
+  INSTALL_AI_CHAT=0
+  INSTALL_SCENARIO=0
+
+  # cek tiap komponen
+  if [ "$AI_DETECT_FLAG" -eq 0 ]; then
+    echo -e "  ${YELLOW}[-]${NC} AI Detect     : belum terinstall"
+  fi
+
+  if [ "$AI_TRAIN_FLAG" -eq 0 ]; then
+    echo -e "  ${YELLOW}[-]${NC} AI Train      : belum terinstall"
+  fi
+
+  if [ "$AI_CHAT_FLAG" -eq 0 ]; then
+    echo -e "  ${YELLOW}[-]${NC} AI Chat       : belum terinstall"
+  fi
+
+  if [ "$SCENARIO_FLAG" -eq 0 ]; then
+    echo -e "  ${YELLOW}[-]${NC} Scenario Builder : belum terinstall"
+  fi
+
+  # kalau semua sudah terinstall
+  if [ "$AI_DETECT_FLAG" -eq 1 ] && \
+     [ "$AI_TRAIN_FLAG"  -eq 1 ] && \
+     [ "$AI_CHAT_FLAG"   -eq 1 ] && \
+     [ "$SCENARIO_FLAG"  -eq 1 ]; then
+    echo -e "  ${GREEN}[✔]${NC} Semua komponen sudah terinstall"
+    echo ""
+    return
+  fi
+
+  echo ""
+  IFS= read -r -p "Install komponen yang belum ada? (Y/n): " ans
+  ans="${ans:-Y}"
+
+  if [ "$ans" != "Y" ] && [ "$ans" != "y" ]; then
+    echo -e "${YELLOW}[~] Melewati install komponen baru${NC}"
+    return
+  fi
+
+  echo ""
+
+  # AI Detect
+  if [ "$AI_DETECT_FLAG" -eq 0 ]; then
+    IFS= read -r -p "  Install AI Detect? (Y/n): " a
+    a="${a:-Y}"
+    [ "$a" = "Y" ] || [ "$a" = "y" ] && INSTALL_AI_DETECT=1
+  fi
+
+  # AI Train
+  if [ "$AI_TRAIN_FLAG" -eq 0 ]; then
+    IFS= read -r -p "  Install AI Train? (Y/n): " a
+    a="${a:-Y}"
+    [ "$a" = "Y" ] || [ "$a" = "y" ] && INSTALL_AI_TRAIN=1
+  fi
+
+  # AI Chat
+  if [ "$AI_CHAT_FLAG" -eq 0 ]; then
+    IFS= read -r -p "  Install AI Chat? (Y/n): " a
+    a="${a:-Y}"
+    [ "$a" = "Y" ] || [ "$a" = "y" ] && INSTALL_AI_CHAT=1
+  fi
+
+  # Scenario Builder
+  if [ "$SCENARIO_FLAG" -eq 0 ]; then
+    IFS= read -r -p "  Install Scenario Builder? (Y/n): " a
+    a="${a:-Y}"
+    [ "$a" = "Y" ] || [ "$a" = "y" ] && INSTALL_SCENARIO=1
+  fi
+}
+
+# =========================
 # ⚠️ USER CONFIRMATION
 # =========================
 confirm_update() {
@@ -201,20 +285,21 @@ confirm_update() {
 
   echo ""
   echo -e "${CYAN}Komponen yang akan diupdate:${NC}"
-  echo "  [✔] kecembung (main script)"
-  echo "  [✔] scenario_builder.sh"
+  echo ""
 
-  if [ "$AI_DETECT_FLAG" -eq 1 ]; then
-    echo "  [✔] ai_detect.py"
-  else
-    echo "  [-] ai_detect.py (dilewati, AI_DETECT=0)"
-  fi
+  echo -e "  ${GREEN}[✔]${NC} kecembung (main script)"
 
-  if [ "$AI_TRAIN_FLAG" -eq 1 ]; then
-    echo "  [✔] ai_train.py"
-  else
-    echo "  [-] ai_train.py (dilewati, AI_TRAIN=0)"
-  fi
+  [ "$AI_DETECT_FLAG" -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Detect" \
+    || [ "$INSTALL_AI_DETECT" -eq 1 ] && echo -e "  ${YELLOW}[+]${NC} AI Detect (baru)"
+
+  [ "$AI_TRAIN_FLAG" -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Train" \
+    || [ "$INSTALL_AI_TRAIN" -eq 1 ] && echo -e "  ${YELLOW}[+]${NC} AI Train (baru)"
+
+  [ "$AI_CHAT_FLAG" -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Chat" \
+    || [ "$INSTALL_AI_CHAT" -eq 1 ] && echo -e "  ${YELLOW}[+]${NC} AI Chat (baru)"
+
+  [ "$SCENARIO_FLAG" -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Scenario Builder" \
+    || [ "$INSTALL_SCENARIO" -eq 1 ] && echo -e "  ${YELLOW}[+]${NC} Scenario Builder (baru)"
 
   echo ""
   print_line
@@ -242,7 +327,7 @@ download_files() {
   sleep 1
 
   # Main script — selalu download
-  progress_bar 35 "Downloading kecembung"
+  progress_bar 30 "Downloading kecembung"
   curl -fsSL "$SCRIPT_URL" -o "$TMP_MAIN"
 
   if [ ! -s "$TMP_MAIN" ]; then
@@ -251,9 +336,9 @@ download_files() {
     exit 1
   fi
 
-  # AI detect — hanya kalau flag aktif
-  if [ "$AI_DETECT_FLAG" -eq 1 ]; then
-    progress_bar 50 "Downloading ai_detect.py"
+  # AI Detect — update kalau flag aktif atau mau install baru
+  if [ "$AI_DETECT_FLAG" -eq 1 ] || [ "$INSTALL_AI_DETECT" -eq 1 ]; then
+    progress_bar 40 "Downloading ai_detect.py"
     curl -fsSL "$AI_DETECT_URL" -o "$TMP_AI_DETECT"
 
     if [ ! -s "$TMP_AI_DETECT" ]; then
@@ -262,13 +347,13 @@ download_files() {
       exit 1
     fi
   else
-    progress_bar 50 "Skipping ai_detect.py (flag off)"
-    sleep 0.5
+    progress_bar 40 "Skipping ai_detect.py"
+    sleep 0.3
   fi
 
-  # AI train — hanya kalau flag aktif
-  if [ "$AI_TRAIN_FLAG" -eq 1 ]; then
-    progress_bar 65 "Downloading ai_train.py"
+  # AI Train — update kalau flag aktif atau mau install baru
+  if [ "$AI_TRAIN_FLAG" -eq 1 ] || [ "$INSTALL_AI_TRAIN" -eq 1 ]; then
+    progress_bar 55 "Downloading ai_train.py"
     curl -fsSL "$AI_TRAIN_URL" -o "$TMP_AI_TRAIN"
 
     if [ ! -s "$TMP_AI_TRAIN" ]; then
@@ -277,21 +362,72 @@ download_files() {
       exit 1
     fi
   else
-    progress_bar 65 "Skipping ai_train.py (flag off)"
-    sleep 0.5
+    progress_bar 55 "Skipping ai_train.py"
+    sleep 0.3
   fi
 
-  # Scenario builder — selalu download
-  progress_bar 75 "Downloading scenario_builder.sh"
-  curl -fsSL "$SCENARIO_URL" -o "$TMP_SCENARIO"
+  # Scenario Builder — update kalau flag aktif atau mau install baru
+  if [ "$SCENARIO_FLAG" -eq 1 ] || [ "$INSTALL_SCENARIO" -eq 1 ]; then
+    progress_bar 70 "Downloading scenario_builder.sh"
+    curl -fsSL "$SCENARIO_URL" -o "$TMP_SCENARIO"
 
-  if [ ! -s "$TMP_SCENARIO" ]; then
-    echo ""
-    echo -e "${RED}[!] Gagal download scenario_builder.sh${NC}"
-    exit 1
+    if [ ! -s "$TMP_SCENARIO" ]; then
+      echo ""
+      echo -e "${RED}[!] Gagal download scenario_builder.sh${NC}"
+      exit 1
+    fi
+  else
+    progress_bar 70 "Skipping scenario_builder.sh"
+    sleep 0.3
   fi
 
   sleep 1
+}
+
+# =========================
+# ⚙️ INSTALL KOMPONEN BARU
+# =========================
+install_new_components() {
+
+  # Python venv — kalau AI Detect atau AI Train baru diinstall
+  NEED_VENV=0
+  [ "$INSTALL_AI_DETECT" -eq 1 ] && NEED_VENV=1
+  [ "$INSTALL_AI_TRAIN"  -eq 1 ] && NEED_VENV=1
+
+  AI_ENV="$HOME/kecembung-env"
+
+  if [ "$NEED_VENV" -eq 1 ]; then
+
+    progress_bar 75 "Setting up Python venv"
+
+    if [ ! -d "$AI_ENV" ] || \
+       [ ! -x "$AI_ENV/bin/python" ] || \
+       [ ! -x "$AI_ENV/bin/pip" ]; then
+
+      sudo apt install -y python3 python3-pip python3-venv >/dev/null 2>&1
+      python3 -m venv "$AI_ENV"
+      "$AI_ENV/bin/pip" install --upgrade pip >/dev/null 2>&1
+      "$AI_ENV/bin/pip" install ultralytics opencv-python --no-cache-dir >/dev/null 2>&1
+
+      if [ "$INSTALL_AI_DETECT" -eq 1 ]; then
+        "$AI_ENV/bin/pip" install torch torchvision torchaudio \
+          --index-url https://download.pytorch.org/whl/cpu >/dev/null 2>&1
+      fi
+
+    fi
+
+  fi
+
+  # Ollama — kalau AI Chat baru diinstall
+  if [ "$INSTALL_AI_CHAT" -eq 1 ]; then
+
+    progress_bar 78 "Installing Ollama"
+
+    if ! command -v ollama >/dev/null 2>&1; then
+      curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1
+    fi
+
+  fi
 }
 
 # =========================
@@ -300,11 +436,9 @@ download_files() {
 cleanup_old() {
   progress_bar 85 "Cleaning old files"
 
-  rm -f "$MAIN_SCRIPT"
-  rm -f "$SCENARIO_FILE"
-
   [ "$AI_DETECT_FLAG" -eq 1 ] && rm -f "$AI_DETECT_FILE"
   [ "$AI_TRAIN_FLAG"  -eq 1 ] && rm -f "$AI_TRAIN_FILE"
+  [ "$SCENARIO_FLAG"  -eq 1 ] && rm -f "$SCENARIO_FILE"
 
   sleep 1
 }
@@ -318,21 +452,60 @@ install_update() {
   mkdir -p "$AI_DIR"
   mkdir -p "$SCENARIO_DIR"
 
-  mv "$TMP_MAIN" "$MAIN_SCRIPT"
-  chmod +x "$MAIN_SCRIPT"
+  # main script
+  sudo mv "$TMP_MAIN" "$MAIN_SCRIPT"
+  sudo chmod +x "$MAIN_SCRIPT"
 
-  mv "$TMP_SCENARIO" "$SCENARIO_FILE"
-  chmod +x "$SCENARIO_FILE"
-
-  if [ "$AI_DETECT_FLAG" -eq 1 ] && [ -f "$TMP_AI_DETECT" ]; then
-    mv "$TMP_AI_DETECT" "$AI_DETECT_FILE"
+  # bung symlink pastikan masih ada
+  if [ ! -f /usr/local/bin/bung ]; then
+    cat > /tmp/bung <<'BUNGSCRIPT'
+#!/bin/bash
+exec /usr/local/bin/kecembung "$@"
+BUNGSCRIPT
+    sudo mv /tmp/bung /usr/local/bin/bung
+    sudo chmod +x /usr/local/bin/bung
   fi
 
-  if [ "$AI_TRAIN_FLAG" -eq 1 ] && [ -f "$TMP_AI_TRAIN" ]; then
-    mv "$TMP_AI_TRAIN" "$AI_TRAIN_FILE"
+  # AI Detect
+  if [ "$AI_DETECT_FLAG" -eq 1 ] || [ "$INSTALL_AI_DETECT" -eq 1 ]; then
+    [ -f "$TMP_AI_DETECT" ] && mv "$TMP_AI_DETECT" "$AI_DETECT_FILE"
+  fi
+
+  # AI Train
+  if [ "$AI_TRAIN_FLAG" -eq 1 ] || [ "$INSTALL_AI_TRAIN" -eq 1 ]; then
+    [ -f "$TMP_AI_TRAIN" ] && mv "$TMP_AI_TRAIN" "$AI_TRAIN_FILE"
+  fi
+
+  # Scenario Builder
+  if [ "$SCENARIO_FLAG" -eq 1 ] || [ "$INSTALL_SCENARIO" -eq 1 ]; then
+    [ -f "$TMP_SCENARIO" ] && mv "$TMP_SCENARIO" "$SCENARIO_FILE"
+    chmod +x "$SCENARIO_FILE" 2>/dev/null
   fi
 
   sleep 1
+}
+
+# =========================
+# 💾 UPDATE MODE FLAG
+# =========================
+update_mode_flag() {
+
+  # update flag kalau ada komponen baru yang diinstall
+  if [ "$INSTALL_AI_DETECT" -eq 1 ]; then AI_DETECT_FLAG=1; fi
+  if [ "$INSTALL_AI_TRAIN"  -eq 1 ]; then AI_TRAIN_FLAG=1;  fi
+  if [ "$INSTALL_AI_CHAT"   -eq 1 ]; then AI_CHAT_FLAG=1;   fi
+  if [ "$INSTALL_SCENARIO"  -eq 1 ]; then SCENARIO_FLAG=1;  fi
+
+  cat > "$MODE_FILE" <<EOF
+AI_DETECT=$AI_DETECT_FLAG
+AI_TRAIN=$AI_TRAIN_FLAG
+AI_CHAT=$AI_CHAT_FLAG
+SCENARIO=$SCENARIO_FLAG
+OLLAMA=$OLLAMA_FLAG
+OFFENSIVE=$OFFENSIVE_FLAG
+EOF
+
+  chmod 600 "$MODE_FILE"
 }
 
 # =========================
@@ -347,12 +520,21 @@ finish_update() {
   print_line
   echo -e "${GREEN}[✔] KECEMBUNG BERHASIL DIUPDATE${NC}"
   print_line
+
+  echo ""
+  echo -e "${CYAN}Komponen aktif:${NC}"
+  echo ""
+  echo -e "  ${GREEN}[✔]${NC} kecembung (main script)"
+  [ "$AI_DETECT_FLAG" -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Detect"
+  [ "$AI_TRAIN_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Train"
+  [ "$AI_CHAT_FLAG"   -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Chat"
+  [ "$SCENARIO_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Scenario Builder"
   echo ""
 
   sleep 2
   clear
 
-  exec 0
+  exec /usr/local/bin/kecembung
 }
 
 # =========================
@@ -362,8 +544,11 @@ print_title
 
 check_internet
 validate_server
+check_missing_components
 confirm_update
 download_files
+install_new_components
 cleanup_old
 install_update
+update_mode_flag
 finish_update

