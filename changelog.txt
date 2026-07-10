@@ -1,0 +1,73 @@
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║          KECEMBUNG NETWORK TOOLKIT v3.0.0 - SPECTRE Update   ║
+║                     Release: 1 July 2026                     ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+
+🔥 MAJOR UPDATE: SPECTRE INTEGRATION
+────────────────────────────────────────────────────────────────
+   Next-gen C2 system dengan Tactical FS & Ghost Cast Protocol
+   Akses via menu utama → [SPECTRE]
+
+────────────────────────────────────────────────────────────────
+✨ NEW FEATURES
+────────────────────────────────────────────────────────────────
+
+📊 Reporting Suite
+   ├─ Auto Report        Generate HTML pentest report via pandoc
+   ├─ Telegram Exfil     Kirim file ke Telegram bot untuk exfil jarak jauh
+   └─ Scan Scheduler     Jadwalkan scenario via crontab
+
+🕵 OPSEC Tools
+   ├─ MAC Changer        Spoof MAC interface untuk anonimitas
+   ├─ Logs Cleaner       Bersihin jejak: auth.log, syslog, bash_history
+   ├─ Torify Session     Route semua traffic lewat Tor proxy
+   └─ Process Mask       Sembunyikan nama process via exec -a
+
+📡 Wireless Advanced
+   ├─ WiFi PMKID Attack  Capture WPA2 hash via hcxdumptool
+   ├─ Evil Twin AP       Deploy fake AP + captive portal
+   ├─ WPS Pixie          Pixiedust attack ke router WPS-enabled
+   └─ Bluetooth Scan     Discover BLE devices via bluetoothctl
+
+────────────────────────────────────────────────────────────────
+⚡ IMPROVEMENTS
+────────────────────────────────────────────────────────────────
+
+🎨 UI/UX
+   ├─ Storage Mode       Submenu Reporting baru dengan 3 tools
+   ├─ Offensive Tools    Dipecah: Operations, OPSEC, Wireless Advanced
+   ├─ Scenario Builder   Update ke 52 total commands untuk automation
+   └─ All Menus          Konsisten while-true loops + RETURN_TO_MAIN
+
+📦 Installation
+   ├─ install.sh         Tambah deps Spectre Protocol untuk Offensive Tools
+   ├─ update.sh          Auto-install deps saat pilih Offensive Tools
+   └─ Dependencies       pandoc, wkhtmltopdf, hcxtools, reaver, hostapd, 
+                         dnsmasq, bluez, inotify-tools, tor, knockd, fail2ban
+
+────────────────────────────────────────────────────────────────
+🐛 BUG FIXES
+────────────────────────────────────────────────────────────────
+   ├─ Syntax             Fix semua `if!` → `if !` dan `[!` → `[ !`
+   ├─ cmd_mac_changer    Fix syntax error line 2947
+   └─ Menu Flow          Error handling konsisten di semua submenu
+
+────────────────────────────────────────────────────────────────
+🔒 SECURITY
+────────────────────────────────────────────────────────────────
+   ├─ Logging            Semua aksi offensive ke ~/.kecembung/logs/kecembung_log.txt
+   ├─ Warnings           Authorized use warning di menu Offensive Tools
+   └─ Confirmation       Logs Cleaner butuh konfirmasi eksplisit YES
+
+────────────────────────────────────────────────────────────────
+📝 NOTES
+────────────────────────────────────────────────────────────────
+   • Total Commands      52 (41 existing + 11 new)
+   • Sudo Required       hcxtools, reaver, hostapd, tor, fail2ban, logs cleaner
+   • Tested On           Kali Linux, Ubuntu 22.04+, Debian 12
+
+╔══════════════════════════════════════════════════════════════╗
+║  Thank you for using KECEMBUNG SPECTRE. Stay in the shadows. ║
+╚══════════════════════════════════════════════════════════════╝

