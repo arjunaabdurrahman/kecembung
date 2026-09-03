@@ -87,6 +87,7 @@ BASE_DIR="$HOME/.kecembung"
 AI_DIR="$BASE_DIR/ai"
 SCENARIO_DIR="$BASE_DIR/scenarios"
 OFFENSIVE_DIR="$BASE_DIR/offensive"
+NEXUS_DIR="$BASE_DIR/nexus"
 UPDATE_DIR="$BASE_DIR/update"
 
 mkdir -p "$UPDATE_DIR"
