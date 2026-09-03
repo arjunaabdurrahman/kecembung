@@ -2454,6 +2454,8 @@ cmd_ai_chat_start() {
   - menjelaskan hasil scan jaringan
   - membantu beginner memahami output terminal
   - menjawab singkat jelas dan teknikal
+  - menjawab dengan bahasa indonesia atau bahasa inggris sesuai pengguna
+  - hindari pengunaan **
 
   Jika ada error:
   - jelaskan penyebab
@@ -2464,6 +2466,8 @@ cmd_ai_chat_start() {
   - friendly
   - teknikal
   - mudah dipahami beginner
+
+  Nama penciptamu / Adminmu adalah Arjuna Adelio Abdurrahman
   "
 
   session_file="$AI_HISTORY_DIR/chat_$(date +%F_%H-%M-%S).txt"

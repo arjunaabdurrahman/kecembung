@@ -263,16 +263,44 @@ select_network() {
 # =========================
 check_controller_capability() {
   local token result
+
+  echo ""
+
+  if [ -n "$ZT_BIN" ]; then
+    echo -e "${GREEN}[✔]${NC} ZeroTier terinstall"
+  else
+    echo -e "${RED}[✘]${NC} ZeroTier belum terinstall"
+    return 1
+  fi
+
+  if sudo systemctl is-active --quiet zerotier-one 2>/dev/null; then
+    echo -e "${GREEN}[✔]${NC} Layanan ZeroTier berjalan"
+  else
+    echo -e "${RED}[✘]${NC} Layanan ZeroTier tidak berjalan"
+    return 1
+  fi
+
   token=$(get_auth_token)
-  [ -z "$token" ] && return 1
+  if [ -n "$token" ]; then
+    echo -e "${GREEN}[✔]${NC} Kunci akses ditemukan"
+  else
+    echo -e "${RED}[✘]${NC} Kunci akses tidak ditemukan"
+    return 1
+  fi
 
   result=$(curl -s -X GET \
     -H "X-ZT1-Auth: $token" \
     "$ZT_LOCAL_API/controller" \
     --connect-timeout 5 2>/dev/null)
 
-  echo "$result" | jq -e '.controller == true and .databaseReady == true' >/dev/null 2>&1
-  return $?
+  if echo "$result" | jq -e '.controller == true and .databaseReady == true' >/dev/null 2>&1; then
+    echo -e "${GREEN}[✔]${NC} Mode controller siap digunakan"
+  else
+    echo -e "${RED}[✘]${NC} Mode controller belum siap"
+    return 1
+  fi
+
+  return 0
 }
 
 setup_controller() {
