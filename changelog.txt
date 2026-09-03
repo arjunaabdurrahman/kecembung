@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║          KECEMBUNG NETWORK TOOLKIT v3.0.0 - SPECTRE Update   ║
+║          KECEMBUNG NETWORK TOOLKIT v3.0.2 - Bug Vanish 2.0   ║
 ║                     Release: 1 July 2026                     ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
