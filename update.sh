@@ -26,15 +26,12 @@ set -o pipefail
 UPDATE_MODE="${KECEMBUNG_UPDATE_MODE:-0}"
 
 if [ "$UPDATE_MODE" -eq 1 ]; then
-  # Skip welcome, skip sudo auth, skip password
-  # Langsung lompat ke install component berdasarkan ENV
   INSTALL_AI_DETECT="${INSTALL_AI_DETECT:-0}"
   INSTALL_AI_TRAIN="${INSTALL_AI_TRAIN:-0}"
   INSTALL_AI_CHAT="${INSTALL_AI_CHAT:-0}"
   INSTALL_SCENARIO="${INSTALL_SCENARIO:-0}"
   INSTALL_OFFENSIVE="${INSTALL_OFFENSIVE:-0}"
 else
-  # Normal install flow
   clear
   echo -e "${CYAN}"
   echo "   ██████╗███████╗███╗   ███╗██████╗ ██╗   ██╗███╗   ██╗ ██████╗ "
@@ -71,7 +68,6 @@ if [ -f "$MODE_FILE" ]; then
   NEXUS_FLAG="${NEXUS:-0}"
 fi
 
-# Install flags — default 0 dulu
 INSTALL_AI_DETECT="${INSTALL_AI_DETECT:-0}"
 INSTALL_AI_TRAIN="${INSTALL_AI_TRAIN:-0}"
 INSTALL_AI_CHAT="${INSTALL_AI_CHAT:-0}"
@@ -86,7 +82,6 @@ BASE_DIR="$HOME/.kecembung"
 
 AI_DIR="$BASE_DIR/ai"
 SCENARIO_DIR="$BASE_DIR/scenarios"
-OFFENSIVE_DIR="$BASE_DIR/offensive"
 NEXUS_DIR="$BASE_DIR/nexus"
 UPDATE_DIR="$BASE_DIR/update"
 
@@ -104,10 +99,9 @@ SCRIPT_URL="$REPO_URL/kecembung"
 
 AI_DETECT_URL="$REPO_URL/kecembung_/ai/ai_detect.py"
 AI_TRAIN_URL="$REPO_URL/kecembung_/ai/ai_train.py"
-AI_CHAT_URL="$REPO_URL/kecembung_/ai/ai_chat.py"
+AI_CHAT_URL="$REPO_URL/kecembung_/ai/ai_chat.sh"
 
 SCENARIO_URL="$REPO_URL/kecembung_/scenario/scenario_builder.sh"
-OFFENSIVE_URL="$REPO_URL/kecembung_/offensive/offensive_tools.sh"
 NEXUS_URL="$REPO_URL/kecembung_/nexus/nexus.sh"
 
 # =========================
@@ -117,10 +111,9 @@ MAIN_SCRIPT="/usr/local/bin/kecembung"
 
 AI_DETECT_FILE="$AI_DIR/ai_detect.py"
 AI_TRAIN_FILE="$AI_DIR/ai_train.py"
-AI_CHAT_FILE="$AI_DIR/ai_chat.py"
+AI_CHAT_FILE="$AI_DIR/ai_chat.sh"
 
 SCENARIO_FILE="$SCENARIO_DIR/scenario_builder.sh"
-OFFENSIVE_FILE="$OFFENSIVE_DIR/offensive_tools.sh"
 NEXUS_FILE="$NEXUS_DIR/nexus.sh"
 
 # =========================
@@ -130,10 +123,9 @@ TMP_MAIN="$UPDATE_DIR/kecembung"
 
 TMP_AI_DETECT="$UPDATE_DIR/ai_detect.py"
 TMP_AI_TRAIN="$UPDATE_DIR/ai_train.py"
-TMP_AI_CHAT="$UPDATE_DIR/ai_chat.py"
+TMP_AI_CHAT="$UPDATE_DIR/ai_chat.sh"
 
 TMP_SCENARIO="$UPDATE_DIR/scenario_builder.sh"
-TMP_OFFENSIVE="$UPDATE_DIR/offensive_tools.sh"
 TMP_NEXUS="$UPDATE_DIR/nexus.sh"
 
 # =========================
@@ -234,23 +226,20 @@ check_missing_components() {
   print_line
   echo ""
 
-  # Reset install flags
   INSTALL_AI_DETECT=0
   INSTALL_AI_TRAIN=0
   INSTALL_AI_CHAT=0
   INSTALL_SCENARIO=0
   INSTALL_OFFENSIVE=0
 
-  # Hitung berapa komponen yang belum terinstall
   MISSING_COUNT=0
   [ "$AI_DETECT_FLAG"  -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} AI Detect        : belum terinstall"; ((MISSING_COUNT++)); }
   [ "$AI_TRAIN_FLAG"   -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} AI Train         : belum terinstall"; ((MISSING_COUNT++)); }
   [ "$AI_CHAT_FLAG"    -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} AI Chat          : belum terinstall"; ((MISSING_COUNT++)); }
   [ "$SCENARIO_FLAG"   -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} Scenario Builder : belum terinstall"; ((MISSING_COUNT++)); }
-  [ "$OFFENSIVE_FLAG"  -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} Offensive Tools  : belum terinstall"; ((MISSING_COUNT++)); }
+  [ "$OFFENSIVE_FLAG"  -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} Offensive Tools deps : belum terinstall"; ((MISSING_COUNT++)); }
   [ "$NEXUS_FLAG"      -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} NEXUS            : belum terinstall"; ((MISSING_COUNT++)); }
 
-  # Kalau semua sudah terinstall
   if [ "$MISSING_COUNT" -eq 0 ]; then
     echo -e "  ${GREEN}[✔]${NC} Semua komponen sudah terinstall"
     echo ""
@@ -268,7 +257,6 @@ check_missing_components() {
 
   echo ""
 
-  # Tanya satu per satu hanya yang belum terinstall
   if [ "$AI_DETECT_FLAG" -eq 0 ]; then
     IFS= read -r -p "  Install AI Detect? (Y/n): " a
     a="${a:-Y}"
@@ -294,11 +282,11 @@ check_missing_components() {
   fi
 
   if [ "$OFFENSIVE_FLAG" -eq 0 ]; then
-    IFS= read -r -p "  Install Offensive Tools? (Y/n): " a
+    IFS= read -r -p "  Install Offensive Tools dependencies? (Y/n): " a
     a="${a:-Y}"
     [ "$a" = "Y" ] || [ "$a" = "y" ] && INSTALL_OFFENSIVE=1
   fi
-  
+
   if [ "$NEXUS_FLAG" -eq 0 ]; then
     IFS= read -r -p "  Install NEXUS? (Y/n): " a
     a="${a:-Y}"
@@ -335,10 +323,8 @@ confirm_update() {
   echo -e "${CYAN}Komponen yang akan diproses:${NC}"
   echo ""
 
-  # Main script — selalu diupdate
   echo -e "  ${GREEN}[✔]${NC} kecembung (main script)"
 
-  # AI Detect
   if [ "$AI_DETECT_FLAG" -eq 1 ]; then
     echo -e "  ${GREEN}[↑]${NC} AI Detect        (update)"
   elif [ "$INSTALL_AI_DETECT" -eq 1 ]; then
@@ -347,7 +333,6 @@ confirm_update() {
     echo -e "  ${RED}[-]${NC} AI Detect        (dilewati)"
   fi
 
-  # AI Train
   if [ "$AI_TRAIN_FLAG" -eq 1 ]; then
     echo -e "  ${GREEN}[↑]${NC} AI Train         (update)"
   elif [ "$INSTALL_AI_TRAIN" -eq 1 ]; then
@@ -356,7 +341,6 @@ confirm_update() {
     echo -e "  ${RED}[-]${NC} AI Train         (dilewati)"
   fi
 
-  # AI Chat
   if [ "$AI_CHAT_FLAG" -eq 1 ]; then
     echo -e "  ${GREEN}[↑]${NC} AI Chat          (update)"
   elif [ "$INSTALL_AI_CHAT" -eq 1 ]; then
@@ -365,7 +349,6 @@ confirm_update() {
     echo -e "  ${RED}[-]${NC} AI Chat          (dilewati)"
   fi
 
-  # Scenario Builder
   if [ "$SCENARIO_FLAG" -eq 1 ]; then
     echo -e "  ${GREEN}[↑]${NC} Scenario Builder (update)"
   elif [ "$INSTALL_SCENARIO" -eq 1 ]; then
@@ -374,16 +357,14 @@ confirm_update() {
     echo -e "  ${RED}[-]${NC} Scenario Builder (dilewati)"
   fi
 
-  # Offensive Tools
   if [ "$OFFENSIVE_FLAG" -eq 1 ]; then
-    echo -e "  ${GREEN}[↑]${NC} Offensive Tools  (update)"
+    echo -e "  ${GREEN}[↑]${NC} Offensive Tools deps (update)"
   elif [ "$INSTALL_OFFENSIVE" -eq 1 ]; then
-    echo -e "  ${YELLOW}[+]${NC} Offensive Tools  (install baru)"
+    echo -e "  ${YELLOW}[+]${NC} Offensive Tools deps (install baru)"
   else
-    echo -e "  ${RED}[-]${NC} Offensive Tools  (dilewati)"
+    echo -e "  ${RED}[-]${NC} Offensive Tools deps (dilewati)"
   fi
-  
-  # NEXUS
+
   if [ "$NEXUS_FLAG" -eq 1 ]; then
     echo -e "  ${GREEN}[↑]${NC} NEXUS            (update)"
   elif [ "$INSTALL_NEXUS" -eq 1 ]; then
@@ -417,7 +398,7 @@ download_files() {
 
   sleep 1
 
-  # Main script — selalu download
+  # Main script — selalu download, kalau gagal baru bener-bener stop
   progress_bar 30 "Downloading kecembung"
   curl -fsSL "$SCRIPT_URL" -o "$TMP_MAIN"
 
@@ -427,15 +408,17 @@ download_files() {
     exit 1
   fi
 
-  # AI Detect
+  # AI Detect — skip on fail, jangan batalin seluruh update
   if [ "$AI_DETECT_FLAG" -eq 1 ] || [ "$INSTALL_AI_DETECT" -eq 1 ]; then
     progress_bar 38 "Downloading ai_detect.py"
     curl -fsSL "$AI_DETECT_URL" -o "$TMP_AI_DETECT"
 
     if [ ! -s "$TMP_AI_DETECT" ]; then
       echo ""
-      echo -e "${RED}[!] Gagal download ai_detect.py${NC}"
-      exit 1
+      echo -e "${YELLOW}[!] Gagal download ai_detect.py — dilewati${NC}"
+      AI_DETECT_FLAG=0
+      INSTALL_AI_DETECT=0
+      sleep 1
     fi
   else
     progress_bar 38 "Skipping ai_detect.py"
@@ -449,8 +432,10 @@ download_files() {
 
     if [ ! -s "$TMP_AI_TRAIN" ]; then
       echo ""
-      echo -e "${RED}[!] Gagal download ai_train.py${NC}"
-      exit 1
+      echo -e "${YELLOW}[!] Gagal download ai_train.py — dilewati${NC}"
+      AI_TRAIN_FLAG=0
+      INSTALL_AI_TRAIN=0
+      sleep 1
     fi
   else
     progress_bar 50 "Skipping ai_train.py"
@@ -459,16 +444,18 @@ download_files() {
 
   # AI Chat
   if [ "$AI_CHAT_FLAG" -eq 1 ] || [ "$INSTALL_AI_CHAT" -eq 1 ]; then
-    progress_bar 62 "Downloading ai_chat.py"
+    progress_bar 62 "Downloading ai_chat.sh"
     curl -fsSL "$AI_CHAT_URL" -o "$TMP_AI_CHAT"
 
     if [ ! -s "$TMP_AI_CHAT" ]; then
       echo ""
-      echo -e "${RED}[!] Gagal download ai_chat.py${NC}"
-      exit 1
+      echo -e "${YELLOW}[!] Gagal download ai_chat.sh — dilewati (fitur belum tersedia)${NC}"
+      AI_CHAT_FLAG=0
+      INSTALL_AI_CHAT=0
+      sleep 1
     fi
   else
-    progress_bar 62 "Skipping ai_chat.py"
+    progress_bar 62 "Skipping ai_chat.sh"
     sleep 0.3
   fi
 
@@ -479,29 +466,16 @@ download_files() {
 
     if [ ! -s "$TMP_SCENARIO" ]; then
       echo ""
-      echo -e "${RED}[!] Gagal download scenario_builder.sh${NC}"
-      exit 1
+      echo -e "${YELLOW}[!] Gagal download scenario_builder.sh — dilewati${NC}"
+      SCENARIO_FLAG=0
+      INSTALL_SCENARIO=0
+      sleep 1
     fi
   else
     progress_bar 74 "Skipping scenario_builder.sh"
     sleep 0.3
   fi
 
-  # Offensive Tools
-  if [ "$OFFENSIVE_FLAG" -eq 1 ] || [ "$INSTALL_OFFENSIVE" -eq 1 ]; then
-    progress_bar 82 "Downloading offensive_tools.sh"
-    curl -fsSL "$OFFENSIVE_URL" -o "$TMP_OFFENSIVE"
-
-    if [ ! -s "$TMP_OFFENSIVE" ]; then
-      echo ""
-      echo -e "${RED}[!] Gagal download offensive_tools.sh${NC}"
-      exit 1
-    fi
-  else
-    progress_bar 82 "Skipping offensive_tools.sh"
-    sleep 0.3
-  fi
-  
   # NEXUS
   if [ "$NEXUS_FLAG" -eq 1 ] || [ "$INSTALL_NEXUS" -eq 1 ]; then
     progress_bar 86 "Downloading nexus.sh"
@@ -509,8 +483,10 @@ download_files() {
 
     if [ ! -s "$TMP_NEXUS" ]; then
       echo ""
-      echo -e "${RED}[!] Gagal download nexus.sh${NC}"
-      exit 1
+      echo -e "${YELLOW}[!] Gagal download nexus.sh — dilewati${NC}"
+      NEXUS_FLAG=0
+      INSTALL_NEXUS=0
+      sleep 1
     fi
   else
     progress_bar 86 "Skipping nexus.sh"
@@ -525,7 +501,6 @@ download_files() {
 # =========================
 install_new_components() {
 
-  # Python venv — kalau AI Detect atau AI Train baru diinstall
   NEED_VENV=0
   [ "$INSTALL_AI_DETECT" -eq 1 ] && NEED_VENV=1
   [ "$INSTALL_AI_TRAIN"  -eq 1 ] && NEED_VENV=1
@@ -554,7 +529,6 @@ install_new_components() {
 
   fi
 
-  # Ollama — kalau AI Chat baru diinstall
   if [ "$INSTALL_AI_CHAT" -eq 1 ]; then
 
     progress_bar 86 "Installing Ollama"
@@ -563,29 +537,27 @@ install_new_components() {
       curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1
     fi
 
-    # Update OLLAMA_FLAG karena sekarang sudah terinstall
     OLLAMA_FLAG=1
 
   fi
-  
+
   # =========================
-  # 💀 OFFENSIVE DEPS
+  # 💀 OFFENSIVE DEPS (langsung apt install, nggak ada file yang didownload)
   # =========================
   if [ "$INSTALL_OFFENSIVE" -eq 1 ]; then
 
     progress_bar 87 "Installing Offensive dependencies"
 
-    # Install semua deps Ghost Protocol v2.1.0
     sudo apt install -y nmap masscan aircrack-ng exploitdb hcxtools reaver hostapd dnsmasq bluez inotify-tools tor knockd fail2ban pandoc wkhtmltopdf >/dev/null 2>&1
 
     if [ $? -eq 0 ]; then
-      ok "Offensive dependencies installed"
+      echo -e "${GREEN}[✔] Offensive dependencies installed${NC}"
     else
-      warn "Some offensive dependencies failed"
-      warn "Run manually: apt install nmap masscan aircrack-ng exploitdb hcxtools reaver hostapd dnsmasq bluez inotify-tools tor knockd fail2ban pandoc wkhtmltopdf"
+      echo -e "${YELLOW}[!] Some offensive dependencies failed${NC}"
+      echo -e "${YELLOW}[~] Run manually: apt install nmap masscan aircrack-ng exploitdb hcxtools reaver hostapd dnsmasq bluez inotify-tools tor knockd fail2ban pandoc wkhtmltopdf${NC}"
     fi
   fi
-  
+
   # =========================
   # 🔗 NEXUS DEPS
   # =========================
@@ -606,7 +578,6 @@ cleanup_old() {
   [ "$AI_TRAIN_FLAG"   -eq 1 ] && rm -f "$AI_TRAIN_FILE"
   [ "$AI_CHAT_FLAG"    -eq 1 ] && rm -f "$AI_CHAT_FILE"
   [ "$SCENARIO_FLAG"   -eq 1 ] && rm -f "$SCENARIO_FILE"
-  [ "$OFFENSIVE_FLAG"  -eq 1 ] && rm -f "$OFFENSIVE_FILE"
   [ "$NEXUS_FLAG"      -eq 1 ] && rm -f "$NEXUS_FILE"
 
   sleep 1
@@ -620,14 +591,11 @@ install_update() {
 
   mkdir -p "$AI_DIR"
   mkdir -p "$SCENARIO_DIR"
-  mkdir -p "$OFFENSIVE_DIR"
   mkdir -p "$NEXUS_DIR"
 
-  # Main script — selalu install
   sudo mv "$TMP_MAIN" "$MAIN_SCRIPT"
   sudo chmod +x "$MAIN_SCRIPT"
 
-  # bung symlink pastikan masih ada
   if [ ! -f /usr/local/bin/bung ]; then
     cat > /tmp/bung <<'BUNGSCRIPT'
 #!/bin/bash
@@ -637,34 +605,24 @@ BUNGSCRIPT
     sudo chmod +x /usr/local/bin/bung
   fi
 
-  # AI Detect
   if [ "$AI_DETECT_FLAG" -eq 1 ] || [ "$INSTALL_AI_DETECT" -eq 1 ]; then
     [ -f "$TMP_AI_DETECT" ] && mv "$TMP_AI_DETECT" "$AI_DETECT_FILE"
   fi
 
-  # AI Train
   if [ "$AI_TRAIN_FLAG" -eq 1 ] || [ "$INSTALL_AI_TRAIN" -eq 1 ]; then
     [ -f "$TMP_AI_TRAIN" ] && mv "$TMP_AI_TRAIN" "$AI_TRAIN_FILE"
   fi
 
-  # AI Chat
   if [ "$AI_CHAT_FLAG" -eq 1 ] || [ "$INSTALL_AI_CHAT" -eq 1 ]; then
     [ -f "$TMP_AI_CHAT" ] && mv "$TMP_AI_CHAT" "$AI_CHAT_FILE"
+    chmod +x "$AI_CHAT_FILE" 2>/dev/null
   fi
 
-  # Scenario Builder
   if [ "$SCENARIO_FLAG" -eq 1 ] || [ "$INSTALL_SCENARIO" -eq 1 ]; then
     [ -f "$TMP_SCENARIO" ] && mv "$TMP_SCENARIO" "$SCENARIO_FILE"
     chmod +x "$SCENARIO_FILE" 2>/dev/null
   fi
 
-  # Offensive Tools
-  if [ "$OFFENSIVE_FLAG" -eq 1 ] || [ "$INSTALL_OFFENSIVE" -eq 1 ]; then
-    [ -f "$TMP_OFFENSIVE" ] && mv "$TMP_OFFENSIVE" "$OFFENSIVE_FILE"
-    chmod +x "$OFFENSIVE_FILE" 2>/dev/null
-  fi
-  
-  # NEXUS
   if [ "$NEXUS_FLAG" -eq 1 ] || [ "$INSTALL_NEXUS" -eq 1 ]; then
     [ -f "$TMP_NEXUS" ] && mv "$TMP_NEXUS" "$NEXUS_FILE"
     chmod +x "$NEXUS_FILE" 2>/dev/null
@@ -678,13 +636,12 @@ BUNGSCRIPT
 # =========================
 update_mode_flag() {
 
-  # Update flag kalau ada komponen baru yang berhasil diinstall
   [ "$INSTALL_AI_DETECT"  -eq 1 ] && AI_DETECT_FLAG=1
   [ "$INSTALL_AI_TRAIN"   -eq 1 ] && AI_TRAIN_FLAG=1
   [ "$INSTALL_AI_CHAT"    -eq 1 ] && AI_CHAT_FLAG=1
   [ "$INSTALL_SCENARIO"   -eq 1 ] && SCENARIO_FLAG=1
   [ "$INSTALL_OFFENSIVE"  -eq 1 ] && OFFENSIVE_FLAG=1
-  [ "$INSTALL_NEXUS"       -eq 1 ] && NEXUS_FLAG=1
+  [ "$INSTALL_NEXUS"      -eq 1 ] && NEXUS_FLAG=1
 
   cat > "$MODE_FILE" <<EOF
 AI_DETECT=$AI_DETECT_FLAG
@@ -720,7 +677,7 @@ finish_update() {
   [ "$AI_TRAIN_FLAG"   -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Train"
   [ "$AI_CHAT_FLAG"    -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} AI Chat"
   [ "$SCENARIO_FLAG"   -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Scenario Builder"
-  [ "$OFFENSIVE_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Offensive Tools"
+  [ "$OFFENSIVE_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Offensive Tools deps"
   [ "$NEXUS_FLAG"      -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} NEXUS"
   echo ""
 

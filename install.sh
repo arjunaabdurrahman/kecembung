@@ -515,6 +515,29 @@ if [ "$INSTALL_AI_TRAIN" -eq 1 ]; then
 fi
 
 # =========================
+# 📥 DOWNLOAD AI CHAT
+# =========================
+
+if [ "$INSTALL_AI_CHAT" -eq 1 ]; then
+
+  echo ""
+  info "Downloading AI Chat"
+
+  curl -fsSL "$BASE_URL/kecembung_/ai/ai_chat.sh" \
+    -o "$HOME/.kecembung/ai/ai_chat.sh" >/dev/null 2>&1
+
+  if [ $? -eq 0 ] && [ -s "$HOME/.kecembung/ai/ai_chat.sh" ]; then
+    chmod +x "$HOME/.kecembung/ai/ai_chat.sh"
+    ok "AI Chat downloaded"
+  else
+    fail "Failed to download ai_chat.sh"
+    warn "Run 'bung' then update to install AI Chat later"
+    INSTALL_AI_CHAT=0
+  fi
+
+fi
+
+# =========================
 # 📥 DOWNLOAD SCENARIO BUILDER
 # =========================
 
