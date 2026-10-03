@@ -1,11 +1,11 @@
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║          KECEMBUNG NETWORK TOOLKIT v3.0.3 - Bug Vanish 2.1   ║
+║          KECEMBUNG NETWORK TOOLKIT v4.0.0 - Bug Vanish 2.1   ║
 ║                     Release: 1 July 2026                     ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 
-🔥 MAJOR UPDATE: SPECTRE INTEGRATION
+🔥 MAJOR UPDATE: IoT Tools
 ────────────────────────────────────────────────────────────────
    Next-gen C2 system dengan Tactical FS & Ghost Cast Protocol
    Akses via menu utama → [SPECTRE]

@@ -113,6 +113,11 @@ apt_install() {
   return 0
 }
 
+# Paket yang dipakai seluruh fitur IoT Tools. Paket dasar seperti iproute2,
+# coreutils, awk, grep, sort, tee, dan util-linux sudah tersedia dari sistem
+# atau bagian base dependencies di bawah.
+IOT_PACKAGES="nmap arp-scan iw bluez avahi-utils avahi-daemon zbar-tools sox libsox-fmt-alsa alsa-utils usbutils"
+
 # =========================
 # 🚀 START
 # =========================
@@ -167,6 +172,7 @@ INSTALL_AI_CHAT=0
 INSTALL_SCENARIO=0
 INSTALL_OFFENSIVE=0
 INSTALL_NEXUS=0
+INSTALL_IOT=0
 
 while true; do
 
@@ -198,6 +204,10 @@ while true; do
   echo -e "${GREEN}[6] NEXUS${NC}"
   echo "    Multi-node C2, Tactical FS, Operator Cast"
   echo "    Requires: zerotier-one (official), jq, curl"
+  echo ""
+  echo -e "${GREEN}[7] IoT Tools${NC}"
+  echo "    Network, WiFi, Bluetooth, camera, audio, and USB IoT utilities"
+  echo "    Requires: nmap, arp-scan, iw, bluez, avahi, zbar, sox"
   echo ""
   echo -e "${CYAN}==================================================${NC}"
   echo -e "${YELLOW}Select components (example: 1 3 4)${NC}"
@@ -245,6 +255,7 @@ while true; do
     INSTALL_SCENARIO=1
     INSTALL_OFFENSIVE=1
     INSTALL_NEXUS=1
+    INSTALL_IOT=1
   else
 
     valid=0
@@ -257,6 +268,7 @@ while true; do
         4) INSTALL_SCENARIO=1;  valid=1 ;;
         5) INSTALL_OFFENSIVE=1; valid=1 ;;
         6) INSTALL_NEXUS=1;     valid=1 ;;
+        7) INSTALL_IOT=1;       valid=1 ;;
         *)
           warn "Unknown component: $num"
           ;;
@@ -289,6 +301,7 @@ while true; do
   [ "$INSTALL_SCENARIO"  -eq 1 ] && echo -e "${GREEN}  [✔] Scenario Builder${NC}"
   [ "$INSTALL_OFFENSIVE" -eq 1 ] && echo -e "${RED}  [✔] Offensive Tools${NC}"
   [ "$INSTALL_NEXUS"     -eq 1 ] && echo -e "${GREEN}  [✔] NEXUS${NC}"
+  [ "$INSTALL_IOT"       -eq 1 ] && echo -e "${GREEN}  [✔] IoT Tools${NC}"
 
   echo ""
   echo -e "${CYAN}==================================================${NC}"
@@ -303,6 +316,7 @@ while true; do
     INSTALL_SCENARIO=0
     INSTALL_OFFENSIVE=0
     INSTALL_NEXUS=0
+    INSTALL_IOT=0
     continue
   fi
 
@@ -333,6 +347,26 @@ if apt_install "nmap netcat-openbsd iproute2 dialog figlet wget curl python3 pyt
 else
   fail "Base dependency installation failed"
   exit 1
+fi
+
+# =========================
+# 📡 IOT TOOLS DEPENDENCIES
+# =========================
+
+if [ "$INSTALL_IOT" -eq 1 ]; then
+  info "Installing IoT Tools dependencies"
+
+  if apt_install "$IOT_PACKAGES"; then
+    ok "IoT Tools dependencies installed"
+    if command -v systemctl >/dev/null 2>&1; then
+      sudo systemctl enable --now avahi-daemon bluetooth >/dev/null 2>&1 || \
+        warn "Avahi/Bluetooth service perlu dinyalakan manual bila belum aktif"
+    fi
+  else
+    fail "IoT Tools dependency installation failed"
+    warn "Run manually: sudo apt install $IOT_PACKAGES"
+    exit 1
+  fi
 fi
 
 # =========================
@@ -448,6 +482,7 @@ echo ""
 info "Creating KECEMBUNG structure"
 
 mkdir -p "$HOME/.kecembung/ai"
+mkdir -p "$HOME/.kecembung/iot"
 mkdir -p "$HOME/.kecembung/scenarios"
 mkdir -p "$HOME/.kecembung/logs"
 mkdir -p "$HOME/kecembung_scenarios"
@@ -475,6 +510,27 @@ curl -fsSL "$BASE_URL/kecembung" -o /tmp/kecembung || {
 
 chmod +x /tmp/kecembung
 ok "Main script downloaded"
+
+# =========================
+# 📥 DOWNLOAD IOT TOOLS
+# =========================
+
+if [ "$INSTALL_IOT" -eq 1 ]; then
+  echo ""
+  info "Downloading IoT Tools"
+
+  curl -fsSL "$BASE_URL/kecembung_/iot/laptop_iot.sh" \
+    -o "$HOME/.kecembung/iot/laptop_iot.sh" >/dev/null 2>&1
+
+  if [ $? -eq 0 ] && [ -s "$HOME/.kecembung/iot/laptop_iot.sh" ]; then
+    chmod +x "$HOME/.kecembung/iot/laptop_iot.sh"
+    ok "IoT Tools downloaded"
+  else
+    fail "Failed to download IoT Tools"
+    warn "Run 'bung' then update to install IoT Tools later"
+    INSTALL_IOT=0
+  fi
+fi
 
 # =========================
 # 📥 DOWNLOAD AI DETECT
@@ -685,6 +741,7 @@ SCENARIO=$INSTALL_SCENARIO
 OLLAMA=$NEED_OLLAMA
 OFFENSIVE=$INSTALL_OFFENSIVE
 NEXUS=$INSTALL_NEXUS
+IOT=$INSTALL_IOT
 EOF
 
 chmod 600 "$MODE_FILE"
@@ -773,7 +830,8 @@ if [ "$INSTALL_AI_DETECT" -eq 0 ] && \
    [ "$INSTALL_AI_CHAT"   -eq 0 ] && \
    [ "$INSTALL_SCENARIO"  -eq 0 ] && \
    [ "$INSTALL_OFFENSIVE" -eq 0 ] && \
-   [ "$INSTALL_NEXUS"     -eq 0 ]; then
+   [ "$INSTALL_NEXUS"     -eq 0 ] && \
+   [ "$INSTALL_IOT"       -eq 0 ]; then
   echo -e "  ${CYAN}[~] No additional components${NC}"
 else
   [ "$INSTALL_AI_DETECT" -eq 1 ] && echo -e "  ${GREEN}[✔] AI Detect${NC}"     || echo -e "  ${RED}[✘] AI Detect${NC}"
@@ -782,6 +840,7 @@ else
   [ "$INSTALL_SCENARIO"  -eq 1 ] && echo -e "  ${GREEN}[✔] Scenario Builder${NC}" || echo -e "  ${RED}[✘] Scenario Builder${NC}"
   [ "$INSTALL_OFFENSIVE" -eq 1 ] && echo -e "  ${RED}[✔] Offensive Tools${NC}" || echo -e "  ${RED}[✘] Offensive Tools${NC}"
   [ "$INSTALL_NEXUS"     -eq 1 ] && echo -e "  ${GREEN}[✔] NEXUS${NC}"         || echo -e "  ${RED}[✘] NEXUS${NC}"
+  [ "$INSTALL_IOT"       -eq 1 ] && echo -e "  ${GREEN}[✔] IoT Tools${NC}"     || echo -e "  ${RED}[✘] IoT Tools${NC}"
 fi
 
 echo ""

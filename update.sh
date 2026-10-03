@@ -31,6 +31,8 @@ if [ "$UPDATE_MODE" -eq 1 ]; then
   INSTALL_AI_CHAT="${INSTALL_AI_CHAT:-0}"
   INSTALL_SCENARIO="${INSTALL_SCENARIO:-0}"
   INSTALL_OFFENSIVE="${INSTALL_OFFENSIVE:-0}"
+  INSTALL_NEXUS="${INSTALL_NEXUS:-0}"
+  INSTALL_IOT="${INSTALL_IOT:-0}"
 else
   clear
   echo -e "${CYAN}"
@@ -56,6 +58,7 @@ SCENARIO_FLAG=0
 OLLAMA_FLAG=0
 OFFENSIVE_FLAG=0
 NEXUS_FLAG=0
+IOT_FLAG=0
 
 if [ -f "$MODE_FILE" ]; then
   source "$MODE_FILE"
@@ -66,6 +69,7 @@ if [ -f "$MODE_FILE" ]; then
   OLLAMA_FLAG="${OLLAMA:-0}"
   OFFENSIVE_FLAG="${OFFENSIVE:-0}"
   NEXUS_FLAG="${NEXUS:-0}"
+  IOT_FLAG="${IOT:-0}"
 fi
 
 INSTALL_AI_DETECT="${INSTALL_AI_DETECT:-0}"
@@ -74,6 +78,7 @@ INSTALL_AI_CHAT="${INSTALL_AI_CHAT:-0}"
 INSTALL_SCENARIO="${INSTALL_SCENARIO:-0}"
 INSTALL_OFFENSIVE="${INSTALL_OFFENSIVE:-0}"
 INSTALL_NEXUS="${INSTALL_NEXUS:-0}"
+INSTALL_IOT="${INSTALL_IOT:-0}"
 
 # =========================
 # 📁 KECEMBUNG PATH
@@ -83,6 +88,7 @@ BASE_DIR="$HOME/.kecembung"
 AI_DIR="$BASE_DIR/ai"
 SCENARIO_DIR="$BASE_DIR/scenarios"
 NEXUS_DIR="$BASE_DIR/nexus"
+IOT_DIR="$BASE_DIR/iot"
 UPDATE_DIR="$BASE_DIR/update"
 
 mkdir -p "$UPDATE_DIR"
@@ -103,6 +109,7 @@ AI_CHAT_URL="$REPO_URL/kecembung_/ai/ai_chat.sh"
 
 SCENARIO_URL="$REPO_URL/kecembung_/scenario/scenario_builder.sh"
 NEXUS_URL="$REPO_URL/kecembung_/nexus/nexus.sh"
+IOT_URL="$REPO_URL/kecembung_/iot/laptop_iot.sh"
 
 # =========================
 # 📂 TARGET FILES
@@ -115,6 +122,7 @@ AI_CHAT_FILE="$AI_DIR/ai_chat.sh"
 
 SCENARIO_FILE="$SCENARIO_DIR/scenario_builder.sh"
 NEXUS_FILE="$NEXUS_DIR/nexus.sh"
+IOT_FILE="$IOT_DIR/laptop_iot.sh"
 
 # =========================
 # 📥 TEMP FILES
@@ -127,6 +135,11 @@ TMP_AI_CHAT="$UPDATE_DIR/ai_chat.sh"
 
 TMP_SCENARIO="$UPDATE_DIR/scenario_builder.sh"
 TMP_NEXUS="$UPDATE_DIR/nexus.sh"
+TMP_IOT="$UPDATE_DIR/laptop_iot.sh"
+
+# Semua paket yang digunakan oleh IoT Tools. iproute2 sudah tercakup dalam
+# dependensi utama Kecembung; utilitas shell lainnya merupakan paket sistem.
+IOT_PACKAGES="nmap arp-scan iw bluez avahi-utils avahi-daemon zbar-tools sox libsox-fmt-alsa alsa-utils usbutils"
 
 # =========================
 # 🛡️ CTRL+C PROTECTION
@@ -231,6 +244,8 @@ check_missing_components() {
   INSTALL_AI_CHAT=0
   INSTALL_SCENARIO=0
   INSTALL_OFFENSIVE=0
+  INSTALL_NEXUS=0
+  INSTALL_IOT=0
 
   MISSING_COUNT=0
   [ "$AI_DETECT_FLAG"  -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} AI Detect        : belum terinstall"; ((MISSING_COUNT++)); }
@@ -239,6 +254,7 @@ check_missing_components() {
   [ "$SCENARIO_FLAG"   -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} Scenario Builder : belum terinstall"; ((MISSING_COUNT++)); }
   [ "$OFFENSIVE_FLAG"  -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} Offensive Tools deps : belum terinstall"; ((MISSING_COUNT++)); }
   [ "$NEXUS_FLAG"      -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} NEXUS            : belum terinstall"; ((MISSING_COUNT++)); }
+  [ "$IOT_FLAG"        -eq 0 ] && { echo -e "  ${YELLOW}[-]${NC} IoT Tools        : belum terinstall"; ((MISSING_COUNT++)); }
 
   if [ "$MISSING_COUNT" -eq 0 ]; then
     echo -e "  ${GREEN}[✔]${NC} Semua komponen sudah terinstall"
@@ -291,6 +307,12 @@ check_missing_components() {
     IFS= read -r -p "  Install NEXUS? (Y/n): " a
     a="${a:-Y}"
     [ "$a" = "Y" ] || [ "$a" = "y" ] && INSTALL_NEXUS=1
+  fi
+
+  if [ "$IOT_FLAG" -eq 0 ]; then
+    IFS= read -r -p "  Install IoT Tools? (Y/n): " a
+    a="${a:-Y}"
+    [ "$a" = "Y" ] || [ "$a" = "y" ] && INSTALL_IOT=1
   fi
 }
 
@@ -371,6 +393,14 @@ confirm_update() {
     echo -e "  ${YELLOW}[+]${NC} NEXUS            (install baru)"
   else
     echo -e "  ${RED}[-]${NC} NEXUS            (dilewati)"
+  fi
+
+  if [ "$IOT_FLAG" -eq 1 ]; then
+    echo -e "  ${GREEN}[↑]${NC} IoT Tools        (update)"
+  elif [ "$INSTALL_IOT" -eq 1 ]; then
+    echo -e "  ${YELLOW}[+]${NC} IoT Tools        (install baru)"
+  else
+    echo -e "  ${RED}[-]${NC} IoT Tools        (dilewati)"
   fi
 
   echo ""
@@ -493,6 +523,23 @@ download_files() {
     sleep 0.3
   fi
 
+  # IoT Tools
+  if [ "$IOT_FLAG" -eq 1 ] || [ "$INSTALL_IOT" -eq 1 ]; then
+    progress_bar 92 "Downloading IoT Tools"
+    curl -fsSL "$IOT_URL" -o "$TMP_IOT"
+
+    if [ ! -s "$TMP_IOT" ]; then
+      echo ""
+      echo -e "${YELLOW}[!] Gagal download IoT Tools — dilewati${NC}"
+      IOT_FLAG=0
+      INSTALL_IOT=0
+      sleep 1
+    fi
+  else
+    progress_bar 92 "Skipping IoT Tools"
+    sleep 0.3
+  fi
+
   sleep 1
 }
 
@@ -566,6 +613,25 @@ install_new_components() {
     sudo apt install -y zerotier-one jq curl git >/dev/null 2>&1
     sudo systemctl enable zerotier-one >/dev/null 2>&1
   fi
+
+  # =========================
+  # 📡 IOT TOOLS DEPS
+  # =========================
+  if [ "$IOT_FLAG" -eq 1 ] || [ "$INSTALL_IOT" -eq 1 ]; then
+    progress_bar 91 "Installing IoT Tools dependencies"
+    if sudo apt update -y >/dev/null 2>&1 && \
+       sudo apt install -y $IOT_PACKAGES >/dev/null 2>&1; then
+      echo -e "${GREEN}[✔] IoT Tools dependencies installed${NC}"
+      if command -v systemctl >/dev/null 2>&1; then
+        sudo systemctl enable --now avahi-daemon bluetooth >/dev/null 2>&1 || \
+          echo -e "${YELLOW}[!] Avahi/Bluetooth service perlu dinyalakan manual bila belum aktif${NC}"
+      fi
+    else
+      echo -e "${YELLOW}[!] Some IoT Tools dependencies failed to install${NC}"
+      echo -e "${YELLOW}[~] Run manually: sudo apt install $IOT_PACKAGES${NC}"
+      INSTALL_IOT=0
+    fi
+  fi
 }
 
 # =========================
@@ -579,6 +645,7 @@ cleanup_old() {
   [ "$AI_CHAT_FLAG"    -eq 1 ] && rm -f "$AI_CHAT_FILE"
   [ "$SCENARIO_FLAG"   -eq 1 ] && rm -f "$SCENARIO_FILE"
   [ "$NEXUS_FLAG"      -eq 1 ] && rm -f "$NEXUS_FILE"
+  [ "$IOT_FLAG"        -eq 1 ] && rm -f "$IOT_FILE"
 
   sleep 1
 }
@@ -592,6 +659,7 @@ install_update() {
   mkdir -p "$AI_DIR"
   mkdir -p "$SCENARIO_DIR"
   mkdir -p "$NEXUS_DIR"
+  mkdir -p "$IOT_DIR"
 
   sudo mv "$TMP_MAIN" "$MAIN_SCRIPT"
   sudo chmod +x "$MAIN_SCRIPT"
@@ -628,6 +696,13 @@ BUNGSCRIPT
     chmod +x "$NEXUS_FILE" 2>/dev/null
   fi
 
+  if [ "$IOT_FLAG" -eq 1 ] || [ "$INSTALL_IOT" -eq 1 ]; then
+    if [ -f "$TMP_IOT" ]; then
+      mv "$TMP_IOT" "$IOT_FILE"
+      chmod +x "$IOT_FILE" 2>/dev/null
+    fi
+  fi
+
   sleep 1
 }
 
@@ -642,6 +717,7 @@ update_mode_flag() {
   [ "$INSTALL_SCENARIO"   -eq 1 ] && SCENARIO_FLAG=1
   [ "$INSTALL_OFFENSIVE"  -eq 1 ] && OFFENSIVE_FLAG=1
   [ "$INSTALL_NEXUS"      -eq 1 ] && NEXUS_FLAG=1
+  [ "$INSTALL_IOT"        -eq 1 ] && IOT_FLAG=1
 
   cat > "$MODE_FILE" <<EOF
 AI_DETECT=$AI_DETECT_FLAG
@@ -651,6 +727,7 @@ SCENARIO=$SCENARIO_FLAG
 OLLAMA=$OLLAMA_FLAG
 OFFENSIVE=$OFFENSIVE_FLAG
 NEXUS=$NEXUS_FLAG
+IOT=$IOT_FLAG
 EOF
 
   chmod 600 "$MODE_FILE"
@@ -679,6 +756,7 @@ finish_update() {
   [ "$SCENARIO_FLAG"   -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Scenario Builder"
   [ "$OFFENSIVE_FLAG"  -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} Offensive Tools deps"
   [ "$NEXUS_FLAG"      -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} NEXUS"
+  [ "$IOT_FLAG"        -eq 1 ] && echo -e "  ${GREEN}[✔]${NC} IoT Tools"
   echo ""
 
   sleep 2
