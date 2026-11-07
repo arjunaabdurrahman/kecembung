@@ -141,6 +141,19 @@ TMP_IOT="$UPDATE_DIR/laptop_iot.sh"
 # dependensi utama Kecembung; utilitas shell lainnya merupakan paket sistem.
 IOT_PACKAGES="nmap arp-scan iw bluez avahi-utils avahi-daemon zbar-tools sox libsox-fmt-alsa alsa-utils usbutils"
 
+# Paket untuk NEXUS > Virtual Machine (lab Mikrotik + Ubuntu client via libvirt).
+# openssh-client dipasang terpisah bersama dependensi dasar NEXUS.
+NEXUS_VM_PACKAGES="qemu-system-x86 libvirt-daemon-system libvirt-clients virt-viewer"
+
+# Daftar paket (dari argumen) yang BELUM terpasang
+missing_pkgs() {
+  local p out=""
+  for p in $1; do
+    dpkg -s "$p" >/dev/null 2>&1 || out="$out $p"
+  done
+  echo "${out# }"
+}
+
 # =========================
 # 🛡️ CTRL+C PROTECTION
 # =========================
@@ -608,10 +621,47 @@ install_new_components() {
   # =========================
   # 🔗 NEXUS DEPS
   # =========================
-  if [ "$INSTALL_NEXUS" -eq 1 ]; then
+  # Berlaku untuk install baru MAUPUN update NEXUS yang sudah ada,
+  # supaya menu Virtual Machine (SSH, libvirt) punya dependensinya.
+  if [ "$NEXUS_FLAG" -eq 1 ] || [ "$INSTALL_NEXUS" -eq 1 ]; then
     progress_bar 89 "Installing NEXUS dependencies"
-    sudo apt install -y zerotier-one jq curl git >/dev/null 2>&1
-    sudo systemctl enable zerotier-one >/dev/null 2>&1
+
+    # zerotier-one TIDAK ada di repo Ubuntu bawaan. Kalau ikut di satu perintah
+    # apt, seluruh instalasi (jq, curl, git) ikut batal. Jadi dipisah.
+    sudo apt install -y jq curl git openssh-client >/dev/null 2>&1
+
+    # ZeroTier: hanya untuk install NEXUS baru, lewat installer resmi
+    if [ "$INSTALL_NEXUS" -eq 1 ]; then
+      if ! command -v zerotier-one >/dev/null 2>&1; then
+        curl -s https://install.zerotier.com | sudo bash >/dev/null 2>&1
+      fi
+      sudo systemctl enable zerotier-one >/dev/null 2>&1
+    fi
+
+    # Paket Virtual Machine: tanya dulu kalau belum ada (ukurannya besar)
+    VM_MISSING=$(missing_pkgs "$NEXUS_VM_PACKAGES")
+
+    if [ -n "$VM_MISSING" ]; then
+      echo ""
+      echo -e "${YELLOW}[~] NEXUS > Virtual Machine membutuhkan: ${NC}$VM_MISSING"
+      IFS= read -r -p "  Install sekarang? (Y/n): " a
+      a="${a:-Y}"
+
+      if [ "$a" = "Y" ] || [ "$a" = "y" ]; then
+        if sudo apt install -y $VM_MISSING >/dev/null 2>&1; then
+          echo -e "${GREEN}[✔] Virtual Machine support installed${NC}"
+          if command -v systemctl >/dev/null 2>&1; then
+            sudo systemctl enable --now libvirtd >/dev/null 2>&1 || \
+              echo -e "${YELLOW}[!] libvirtd perlu dinyalakan manual bila belum aktif${NC}"
+          fi
+        else
+          echo -e "${YELLOW}[!] Virtual Machine support gagal diinstall${NC}"
+          echo -e "${YELLOW}[~] Run manually: sudo apt install $NEXUS_VM_PACKAGES${NC}"
+        fi
+      else
+        echo -e "${YELLOW}[~] Dilewati — bisa diinstall nanti dari menu Nexus > Virtual Machine${NC}"
+      fi
+    fi
   fi
 
   # =========================

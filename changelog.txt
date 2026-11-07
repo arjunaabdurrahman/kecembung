@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║          KECEMBUNG NETWORK TOOLKIT v4.0.0 - Bug Vanish 2.1   ║
+║          KECEMBUNG NETWORK TOOLKIT v4.1.0 - Bug Vanish 2.1   ║
 ║                     Release: 1 July 2026                     ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝

@@ -118,6 +118,10 @@ apt_install() {
 # atau bagian base dependencies di bawah.
 IOT_PACKAGES="nmap arp-scan iw bluez avahi-utils avahi-daemon zbar-tools sox libsox-fmt-alsa alsa-utils usbutils"
 
+# Paket untuk NEXUS > Virtual Machine (lab Mikrotik + Ubuntu client via libvirt).
+# openssh-client dipasang terpisah bersama dependensi dasar NEXUS.
+NEXUS_VM_PACKAGES="qemu-system-x86 libvirt-daemon-system libvirt-clients virt-viewer"
+
 # =========================
 # 🚀 START
 # =========================
@@ -203,7 +207,8 @@ while true; do
   echo ""
   echo -e "${GREEN}[6] NEXUS${NC}"
   echo "    Multi-node C2, Tactical FS, Operator Cast"
-  echo "    Requires: zerotier-one (official), jq, curl"
+  echo "    Requires: zerotier-one (official), jq, curl, openssh-client"
+  echo "    Optional: qemu, libvirt, virt-viewer (Virtual Machine)"
   echo ""
   echo -e "${GREEN}[7] IoT Tools${NC}"
   echo "    Network, WiFi, Bluetooth, camera, audio, and USB IoT utilities"
@@ -637,7 +642,7 @@ if [ "$INSTALL_NEXUS" -eq 1 ]; then
   echo ""
   info "Installing NEXUS base dependencies"
 
-  if apt_install "jq curl"; then
+  if apt_install "jq curl openssh-client"; then
     ok "NEXUS base dependencies installed"
   else
     warn "Some NEXUS base dependencies failed"
@@ -721,6 +726,30 @@ EOF
     progress_bar 3 3 "Failed"
     fail "Failed to download nexus.sh"
     warn "Run 'bung' then update to install NEXUS later"
+  fi
+
+  # =========================
+  # 🖥️ NEXUS VIRTUAL MACHINE SUPPORT
+  # =========================
+  echo ""
+  info "NEXUS Virtual Machine support"
+  echo "      Lab Mikrotik + Ubuntu client lewat libvirt (qemu, virt-viewer)"
+  echo "      Ukuran download cukup besar. Boleh dilewati — bisa diinstall"
+  echo "      nanti dari menu Nexus > Virtual Machine."
+  echo ""
+  IFS= read -r -p "Install Virtual Machine support? (YES/no): " vm_confirm </dev/tty
+
+  if [ "$vm_confirm" = "no" ]; then
+    warn "Skipping Virtual Machine support"
+  elif apt_install "$NEXUS_VM_PACKAGES"; then
+    ok "Virtual Machine support installed"
+    if command -v systemctl >/dev/null 2>&1; then
+      sudo systemctl enable --now libvirtd >/dev/null 2>&1 || \
+        warn "libvirtd perlu dinyalakan manual bila belum aktif"
+    fi
+  else
+    fail "Virtual Machine support installation failed"
+    warn "Run manually: sudo apt install $NEXUS_VM_PACKAGES"
   fi
 fi
 

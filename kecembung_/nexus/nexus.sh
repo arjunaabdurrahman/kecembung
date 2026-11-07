@@ -21,6 +21,7 @@ NEXUS_DIR="${NEXUS_DIR:-$HOME/.kecembung/nexus}"
 NEXUS_NETWORKS="$NEXUS_DIR/networks"
 NEXUS_LOGS="$NEXUS_DIR/logs"
 NEXUS_CONF="$NEXUS_DIR/nexus.conf"
+NEXUS_VM_CONF="$NEXUS_DIR/vm.conf"
 ZT_HOME="${ZT_HOME:-/var/lib/zerotier-one}"
 ZT_LOCAL_API="${ZT_LOCAL_API:-http://127.0.0.1:9993}"
 
@@ -245,13 +246,13 @@ select_network() {
   done
   echo ""
   read -p "Pilihan: " pick
-  pick=$((pick - 1))
 
-  if [ -z "${nets[$pick]}" ]; then
+  if ! [[ "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "${#nets[@]}" ]; then
     echo -e "${RED}[!]${NC} Pilihan tidak valid"
     press_enter
     return 1
   fi
+  pick=$((pick - 1))
 
   SELECTED_NET="${nets[$pick]}"
   SELECTED_NET_NAME="${names[$pick]}"
@@ -981,11 +982,11 @@ leave_network() {
 }
 
 # =========================
-# 🚀 NEXUS MAIN
+# 🔐 VIRTUAL PRIVATE NETWORK
 # =========================
-nexus_main() {
+vpn_main() {
   init_nexus
-  check_zerotier || return
+  check_zerotier || { press_enter; return; }
   check_deps
   load_config
 
@@ -995,7 +996,7 @@ nexus_main() {
 
     clear
     print_line
-    echo -e "${GREEN}         N E X U S${NC}"
+    echo -e "${GREEN}   N E X U S  -  VIRTUAL PRIVATE NETWORK${NC}"
     print_line
     printf "%-15s : %s\n" "NEXUS-ID"  "nxs-${MY_NODE:0:8}"
     printf "%-15s : %s\n" "Role"      "${NEXUS_ROLE^}"
@@ -1026,6 +1027,526 @@ nexus_main() {
       3) my_nexus_menu ;;
       4) leave_network ;;
       5) break ;;
+      *) echo -e "${YELLOW}[!]${NC} Pilihan tidak valid" ; sleep 1 ;;
+    esac
+  done
+}
+
+# =========================
+# 🖥️ VIRTUAL MACHINE (MIKROTIK)
+# =========================
+vm_load_config() {
+  VM_ROUTER="mikrotik"
+  VM_CLIENT="ubuntu-client"
+  VM_ROUTER_IP=""
+  VM_CLIENT_IP=""
+  VM_CLIENT_USER=""
+
+  [ -f "$NEXUS_VM_CONF" ] && source "$NEXUS_VM_CONF"
+}
+
+vm_save_config() {
+  cat > "$NEXUS_VM_CONF" <<EOF
+VM_ROUTER=$VM_ROUTER
+VM_CLIENT=$VM_CLIENT
+VM_ROUTER_IP=$VM_ROUTER_IP
+VM_CLIENT_IP=$VM_CLIENT_IP
+VM_CLIENT_USER=$VM_CLIENT_USER
+EOF
+  chmod 600 "$NEXUS_VM_CONF"
+}
+
+vm_check_deps() {
+  if ! command -v virsh >/dev/null 2>&1; then
+    echo ""
+    echo -e "${YELLOW}[!]${NC} Layer virtualisasi belum terinstall"
+    echo ""
+    read -rp "Install sekarang? (Y/n): " ans
+    ans="${ans:-Y}"
+    if [ "$ans" != "Y" ] && [ "$ans" != "y" ]; then
+      echo -e "${RED}[!]${NC} Menu Virtual Machine membutuhkan layer virtualisasi"
+      return 1
+    fi
+    echo ""
+    echo -e "${CYAN}[~]${NC} Menginstall layer virtualisasi..."
+    sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients virt-viewer >/dev/null 2>&1
+
+    if ! command -v virsh >/dev/null 2>&1; then
+      echo -e "${RED}[!]${NC} Gagal install. Cek koneksi internet."
+      return 1
+    fi
+    echo -e "${GREEN}[✔]${NC} Layer virtualisasi siap"
+  fi
+
+  if ! sudo systemctl is-active --quiet libvirtd 2>/dev/null; then
+    sudo systemctl start libvirtd >/dev/null 2>&1
+    sleep 2
+  fi
+
+  return 0
+}
+
+vm_state() {
+  local s
+  s=$(sudo virsh domstate "$1" 2>/dev/null | head -1)
+  [ -z "$s" ] && s="tidak ditemukan"
+  echo "$s"
+}
+
+vm_state_label() {
+  case "$1" in
+    "running")         echo -e "${GREEN}Running${NC}" ;;
+    "shut off")        echo -e "${YELLOW}Stopped${NC}" ;;
+    "tidak ditemukan") echo -e "${RED}Tidak ditemukan${NC}" ;;
+    *)                 echo -e "${YELLOW}$1${NC}" ;;
+  esac
+}
+
+# Deteksi IP sebuah VM. Argumen: nama VM, IP manual (opsional)
+vm_detect_ip() {
+  local vm="$1"
+  local manual="$2"
+  local ip=""
+
+  # IP manual (menu Pengaturan) diprioritaskan
+  if [ -n "$manual" ]; then
+    echo "$manual"
+    return 0
+  fi
+
+  ip=$(sudo virsh domifaddr "$vm" --source lease 2>/dev/null | \
+       awk '/ipv4/ {print $4}' | cut -d/ -f1 | head -1)
+
+  if [ -z "$ip" ]; then
+    ip=$(sudo virsh domifaddr "$vm" --source arp 2>/dev/null | \
+         awk '/ipv4/ {print $4}' | cut -d/ -f1 | head -1)
+  fi
+
+  echo "$ip"
+}
+
+vm_start() {
+  print_header "   VIRTUAL MACHINE - START"
+  echo ""
+
+  local vm state ans
+
+  for vm in "$VM_ROUTER" "$VM_CLIENT"; do
+    state=$(vm_state "$vm")
+    case "$state" in
+      "running")
+        echo -e "${CYAN}[~]${NC} $vm sudah berjalan"
+        ;;
+      "tidak ditemukan")
+        echo -e "${RED}[✘]${NC} $vm tidak ditemukan di libvirt"
+        ;;
+      *)
+        if sudo virsh start "$vm" >/dev/null 2>&1; then
+          echo -e "${GREEN}[✔]${NC} $vm dinyalakan"
+        else
+          echo -e "${RED}[✘]${NC} Gagal menyalakan $vm"
+        fi
+        ;;
+    esac
+  done
+
+  echo ""
+  echo -e "${CYAN}[~]${NC} Menunggu VM booting..."
+  sleep 4
+
+  echo ""
+  sudo virsh list --all
+
+  echo ""
+  echo -e "${CYAN}[~]${NC} Akses $VM_CLIENT lewat menu SSH Ubuntu Client"
+
+  press_enter
+}
+
+vm_stop() {
+  print_header "   VIRTUAL MACHINE - STOP"
+  echo ""
+
+  local vm i still
+
+  echo -e "${CYAN}[~]${NC} Mematikan VM..."
+  for vm in "$VM_ROUTER" "$VM_CLIENT"; do
+    sudo virsh shutdown "$vm" >/dev/null 2>&1
+  done
+
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 1
+    still=0
+    for vm in "$VM_ROUTER" "$VM_CLIENT"; do
+      [ "$(vm_state "$vm")" = "running" ] && still=1
+    done
+    [ "$still" -eq 0 ] && break
+  done
+
+  for vm in "$VM_ROUTER" "$VM_CLIENT"; do
+    if [ "$(vm_state "$vm")" = "running" ]; then
+      sudo virsh destroy "$vm" >/dev/null 2>&1
+      echo -e "${YELLOW}[!]${NC} $vm dihentikan paksa"
+    else
+      echo -e "${GREEN}[✔]${NC} $vm berhenti"
+    fi
+  done
+
+  echo ""
+  sudo virsh list --all
+
+  press_enter
+}
+
+vm_console() {
+  print_header "   VIRTUAL MACHINE - CONSOLE MIKROTIK"
+  echo ""
+
+  if [ "$(vm_state "$VM_ROUTER")" != "running" ]; then
+    echo -e "${RED}[!]${NC} $VM_ROUTER belum berjalan. Start VM dulu."
+    press_enter
+    return 1
+  fi
+
+  echo -e "${YELLOW}[!]${NC} Keluar dari console: Ctrl + ]"
+  echo ""
+  sleep 1
+
+  sudo virsh console "$VM_ROUTER"
+
+  press_enter
+}
+
+# Cari terminal emulator yang tersedia (untuk SSH di terminal baru)
+vm_find_terminal() {
+  local t
+  for t in gnome-terminal x-terminal-emulator konsole xfce4-terminal mate-terminal xterm; do
+    if command -v "$t" >/dev/null 2>&1; then
+      echo "$t"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Buka SSH ke Ubuntu Client.
+# Mode 1 = terminal ini, Mode 2 = terminal baru (otomatis tertutup saat exit)
+vm_ssh_client() {
+  print_header "   VIRTUAL MACHINE - SSH UBUNTU CLIENT"
+  echo ""
+
+  local cip cuser mode term ssh_cmd
+
+  if ! command -v ssh >/dev/null 2>&1; then
+    echo -e "${RED}[!]${NC} ssh belum terinstall (sudo apt install openssh-client)"
+    press_enter
+    return 1
+  fi
+
+  if [ "$(vm_state "$VM_CLIENT")" != "running" ]; then
+    echo -e "${RED}[!]${NC} $VM_CLIENT belum berjalan. Start VM dulu."
+    press_enter
+    return 1
+  fi
+
+  cip=$(vm_detect_ip "$VM_CLIENT" "$VM_CLIENT_IP")
+  if [ -z "$cip" ]; then
+    echo -e "${YELLOW}[!]${NC} IP $VM_CLIENT belum terdeteksi"
+    echo ""
+    echo -e "${CYAN}[~]${NC} Coba:"
+    echo "    - Tunggu beberapa detik sampai VM selesai booting"
+    echo "    - Atau isi manual lewat menu Pengaturan"
+    press_enter
+    return 1
+  fi
+
+  cuser="$VM_CLIENT_USER"
+  if [ -z "$cuser" ]; then
+    read -rp "User SSH untuk $VM_CLIENT: " cuser
+    cuser="${cuser// /}"
+    if [ -z "$cuser" ]; then
+      echo -e "${RED}[!]${NC} User tidak boleh kosong"
+      press_enter
+      return 1
+    fi
+    VM_CLIENT_USER="$cuser"
+    vm_save_config
+  fi
+
+  if ! timeout 3 bash -c "</dev/tcp/$cip/22" 2>/dev/null; then
+    echo -e "${RED}[!]${NC} Port SSH (22) di $cip tidak terjangkau"
+    echo ""
+    echo -e "${CYAN}[~]${NC} Pastikan di $VM_CLIENT sudah terpasang SSH server:"
+    echo "    sudo apt install openssh-server"
+    echo "    sudo systemctl enable --now ssh"
+    press_enter
+    return 1
+  fi
+
+  printf "%-15s : %s\n" "Target" "$cuser@$cip"
+  echo ""
+  echo "1. SSH di terminal ini"
+  echo "2. SSH di terminal baru"
+  echo "3. Kembali"
+  echo ""
+  read -p "Pilih menu: " mode
+
+  ssh_cmd="ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 $cuser@$cip"
+
+  case "$mode" in
+    1)
+      echo ""
+      echo -e "${YELLOW}[!]${NC} Ketik 'exit' untuk kembali ke menu"
+      echo ""
+      $ssh_cmd
+      press_enter
+      ;;
+
+    2)
+      term=$(vm_find_terminal)
+      if [ -z "$term" ]; then
+        echo ""
+        echo -e "${RED}[!]${NC} Terminal emulator tidak ditemukan"
+        echo -e "${CYAN}[~]${NC} Gunakan opsi 1 (terminal ini)"
+        press_enter
+        return 1
+      fi
+
+      case "$term" in
+        gnome-terminal|mate-terminal|xfce4-terminal)
+          "$term" -- bash -c "$ssh_cmd" >/dev/null 2>&1 &
+          ;;
+        konsole)
+          konsole -e bash -c "$ssh_cmd" >/dev/null 2>&1 &
+          ;;
+        *)
+          "$term" -e bash -c "$ssh_cmd" >/dev/null 2>&1 &
+          ;;
+      esac
+      disown 2>/dev/null
+
+      echo ""
+      echo -e "${GREEN}[✔]${NC} Terminal baru dibuka ($cuser@$cip)"
+      echo -e "${CYAN}[~]${NC} Ketik 'exit' di sana — terminal itu tertutup, terminal ini tetap jalan"
+      sleep 2
+      ;;
+
+    3) return ;;
+    *) echo -e "${YELLOW}[!]${NC} Pilihan tidak valid" ; sleep 1 ;;
+  esac
+}
+
+vm_status() {
+  print_header "   VIRTUAL MACHINE - STATUS"
+  echo ""
+
+  local rstate cstate rip cip
+
+  rstate=$(vm_state "$VM_ROUTER")
+  cstate=$(vm_state "$VM_CLIENT")
+  rip=$(vm_detect_ip "$VM_ROUTER" "$VM_ROUTER_IP")
+  cip=$(vm_detect_ip "$VM_CLIENT" "$VM_CLIENT_IP")
+  [ -z "$rip" ] && rip="belum terdeteksi"
+  [ -z "$cip" ] && cip="belum terdeteksi"
+
+  printf "%-15s : " "$VM_ROUTER"
+  vm_state_label "$rstate"
+  printf "%-15s : " "$VM_CLIENT"
+  vm_state_label "$cstate"
+  echo ""
+  printf "%-15s : %s\n" "IP Mikrotik" "$rip"
+  printf "%-15s : %s\n" "IP Client"   "$cip"
+  printf "%-15s : %s\n" "User SSH"    "${VM_CLIENT_USER:-belum diatur}"
+  echo ""
+  print_line
+  echo ""
+  sudo virsh list --all
+
+  press_enter
+}
+
+vm_test() {
+  print_header "   VIRTUAL MACHINE - TEST KONEKSI"
+  echo ""
+
+  local ip latency entry port label
+
+  if [ "$(vm_state "$VM_ROUTER")" != "running" ]; then
+    echo -e "${RED}[!]${NC} $VM_ROUTER belum berjalan. Start VM dulu."
+    press_enter
+    return 1
+  fi
+
+  ip=$(vm_detect_ip "$VM_ROUTER" "$VM_ROUTER_IP")
+
+  if [ -z "$ip" ]; then
+    echo -e "${YELLOW}[!]${NC} IP Mikrotik belum terdeteksi"
+    echo ""
+    echo -e "${CYAN}[~]${NC} Coba:"
+    echo "    - Pastikan Mikrotik sudah punya IP (dhcp-client / ip address)"
+    echo "    - Atau isi manual lewat menu Pengaturan"
+    press_enter
+    return 1
+  fi
+
+  printf "%-15s : %s\n" "Target" "$ip"
+  echo ""
+
+  latency=$(ping -c 2 -W 2 "$ip" 2>/dev/null | \
+            grep 'time=' | tail -1 | \
+            grep -o 'time=[0-9.]*' | cut -d= -f2)
+
+  if [ -n "$latency" ]; then
+    echo -e "${GREEN}[✔]${NC} Ping ($ip) — ${latency}ms"
+  else
+    echo -e "${RED}[✘]${NC} Ping ($ip) — timeout"
+  fi
+
+  echo ""
+  echo "Service:"
+  echo ""
+
+  for entry in "22:SSH" "80:WebFig" "8291:Winbox" "8728:API"; do
+    port="${entry%%:*}"
+    label="${entry##*:}"
+    if timeout 2 bash -c "</dev/tcp/$ip/$port" 2>/dev/null; then
+      echo -e "${GREEN}[✔]${NC} $label (port $port) terbuka"
+    else
+      echo -e "${RED}[✘]${NC} $label (port $port) tertutup"
+    fi
+  done
+
+  press_enter
+}
+
+_vm_ask_ip() {
+  # $1 = label, $2 = nilai saat ini -> hasil di VM_ASK_RESULT
+  local label="$1"
+  local current="$2"
+  local val
+
+  VM_ASK_RESULT="$current"
+
+  printf "%-15s : %s\n" "$label" "${current:-otomatis}"
+  read -rp "IP baru (ENTER=tetap, '-'=otomatis): " val
+  val="${val// /}"
+
+  if [ -z "$val" ]; then
+    return 0
+  fi
+
+  if [ "$val" = "-" ]; then
+    VM_ASK_RESULT=""
+    return 0
+  fi
+
+  if ! [[ "$val" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    echo -e "${RED}[!]${NC} Format IP tidak valid — nilai lama dipertahankan"
+    return 1
+  fi
+
+  VM_ASK_RESULT="$val"
+  return 0
+}
+
+vm_settings() {
+  print_header "   VIRTUAL MACHINE - PENGATURAN"
+  echo ""
+
+  local u
+
+  _vm_ask_ip "IP Mikrotik" "$VM_ROUTER_IP"
+  VM_ROUTER_IP="$VM_ASK_RESULT"
+  echo ""
+
+  _vm_ask_ip "IP Client" "$VM_CLIENT_IP"
+  VM_CLIENT_IP="$VM_ASK_RESULT"
+  echo ""
+
+  printf "%-15s : %s\n" "User SSH" "${VM_CLIENT_USER:-belum diatur}"
+  read -rp "User baru (ENTER=tetap): " u
+  u="${u// /}"
+  [ -n "$u" ] && VM_CLIENT_USER="$u"
+
+  vm_save_config
+
+  echo ""
+  echo -e "${GREEN}[✔]${NC} Pengaturan disimpan"
+
+  press_enter
+}
+
+vm_main() {
+  init_nexus
+  vm_check_deps || { press_enter; return; }
+  vm_load_config
+
+  local rstate cstate
+
+  while true; do
+    rstate=$(vm_state "$VM_ROUTER")
+    cstate=$(vm_state "$VM_CLIENT")
+
+    clear
+    print_line
+    echo -e "${GREEN}   N E X U S  -  VIRTUAL MACHINE${NC}"
+    print_line
+    printf "%-15s : " "$VM_ROUTER"
+    vm_state_label "$rstate"
+    printf "%-15s : " "$VM_CLIENT"
+    vm_state_label "$cstate"
+    print_line
+
+    echo ""
+    echo "1. Start VM"
+    echo "2. Stop VM"
+    echo "3. Console Mikrotik"
+    echo "4. SSH Ubuntu Client"
+    echo "5. Status & IP"
+    echo "6. Test Koneksi"
+    echo "7. Pengaturan"
+    echo "8. Kembali"
+    echo ""
+    print_line
+    read -p "Pilih menu: " choice
+
+    case "$choice" in
+      1) vm_start ;;
+      2) vm_stop ;;
+      3) vm_console ;;
+      4) vm_ssh_client ;;
+      5) vm_status ;;
+      6) vm_test ;;
+      7) vm_settings ;;
+      8) break ;;
+      *) echo -e "${YELLOW}[!]${NC} Pilihan tidak valid" ; sleep 1 ;;
+    esac
+  done
+}
+
+# =========================
+# 🚀 NEXUS MAIN
+# =========================
+nexus_main() {
+  init_nexus
+
+  while true; do
+    clear
+    print_line
+    echo -e "${GREEN}         N E X U S${NC}"
+    print_line
+    echo ""
+    echo "1. Virtual Machine"
+    echo "2. Virtual Private Network"
+    echo "3. Kembali"
+    echo ""
+    print_line
+    read -p "Pilih menu: " choice
+
+    case "$choice" in
+      1) vm_main ;;
+      2) vpn_main ;;
+      3) break ;;
       *) echo -e "${YELLOW}[!]${NC} Pilihan tidak valid" ; sleep 1 ;;
     esac
   done
